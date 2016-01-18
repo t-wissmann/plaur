@@ -1,0 +1,54 @@
+#!/bin/bash -e
+
+main() {
+case "$1" in
+    init)
+        git init
+        check_directories
+        ;;
+    add)
+        check_directories
+        shift
+        add_aur "$@"
+        ;;
+    *)
+        error "unknown command \"$1\""
+        print_help >&2
+        ;;
+esac
+}
+
+print_help() {
+cat <<EOF
+Usage: $0 SUBCOMMAND ARGS
+
+where SUBCOMMAND is of the following:
+EOF
+}
+
+error() {
+    echo "$0 Error: $*" >&2
+}
+
+# Check that we have a git repository and the important directories
+check_directories() {
+    git_root=$(git rev-parse --show-toplevel)
+    aur_directory="$git_root/aur"
+    mkdir -p "$aur_directory"
+}
+
+# install a new package
+add_aur() {
+    git_url="https://aur.archlinux.org/${1}.git"
+    git clone "$git_url" "$aur_directory/${1}"
+    # todo: save current head
+    #cp "$aur_directory/$1/.git/refs/heads/master" "
+}
+
+git_at() {
+    local d="$aur_directory/$1"
+    shift
+    GIT_DIR="$d/.git" GIT_WORK_TREE="$d" git "$@"
+}
+
+main "$@"
