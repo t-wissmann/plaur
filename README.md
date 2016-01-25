@@ -5,4 +5,4 @@ installed from the [Arch (Linux) User Repository
 (AUR)](http://aur.archlinux.org).
 
 
-// vim: tw=80
+[//]: # (vim: tw=80)
