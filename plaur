@@ -61,6 +61,16 @@ class Git:
             print("git: %s" % err, file=sys.stderr)
         return out
 
+    # tells wether a certain file is tracked by git
+    # filepath can either be absolute or relative to the CWD
+    def is_tracked(self, filepath):
+        _,_,status = self.call('ls-files', '--error-unmatch', filepath);
+        return (status == 0);
+
+    # tells whether the git is a plaur repository
+    def is_plaur_repo(self):
+        return self.is_tracked(self.git_work_tree + "/" + packages_file);
+
     # returns the absolute path of the working dir
     def work_tree(self):
         return self.git_work_tree
@@ -80,6 +90,17 @@ def detect_git():
     else:
         return None;
 
+# returns a Git object for the plaur repository
+def assert_plaur_git():
+    gitpath = detect_git();
+    if gitpath == None:
+        raise UserErrorMessage("Not in a plaur git repository")
+    git = Git(gitpath)
+    if not git.is_plaur_repo():
+        raise UserErrorMessage("Present git repository in »%s« is not a plaur repository"
+                               % git.work_tree())
+    return git
+
 #--------------- classes  ---------------
 class Command:
     def __init__(self, callback, description):
@@ -91,12 +112,27 @@ class Packages:
     def __init__(self, git):
         self.config = configparser.ConfigParser()
         self.git = git
+    def add(self, path, url):
+        # TODO: check that path is prefix-free to all the other paths
+        self.config[path] = {
+            'url' : url,
+            'verified' : "",
+        }
     def read(self):
         self.config.read(self.git.work_tree() + "/" + packages_file)
     def write(self):
         with open(self.git.work_tree() + "/" + packages_file, 'w') as configfile:
             self.config.write(configfile)
             configfile.close()
+    def fetch(self, path):
+        if not path in self.config:
+            raise UserErrorMessage("Invalid package path »%s«" % path)
+        package_git = Git(self.git.work_tree() + "/" + path)
+        if not os.isdir(fullpath):
+            url = self.config[path].url
+            package_git.call_success("clone", url)
+        else:
+            package_git.call_success("pull", "--ff-only")
 
 #--------------- commands ---------------
 def find_command(name):
@@ -148,6 +184,16 @@ def cmd_add(args):
     """
     if (len(args) < 1):
         raise UserErrorMessage("To few arguments")
+    name = args[0]
+    path = args[1] if len(args) > 1 else name
+    git = assert_plaur_git()
+    packs = Packages(git);
+    prefix = git.call_success('rev-parse', '--show-prefix').strip();
+    packs.read()
+    packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name)
+    packs.write()
+    git.call_success("add", git.work_tree() + "/" + packages_file)
+    git.call_success('commit', '-m', "Add " + prefix + path);
 
 #---------------   main   ---------------
 commands = [
