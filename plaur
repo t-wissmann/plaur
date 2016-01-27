@@ -20,8 +20,8 @@ class UserErrorMessage(Exception):
         return self.message
 
 def debug(*objs):
-    return True
     #print("Debug: ", *objs, file=sys.stderr)
+    return True
 
 #--------------- git wrapper  ---------------
 class Git:
@@ -129,6 +129,8 @@ class Packages:
         with open(self.git.work_tree() + "/" + packages_file, 'w') as configfile:
             self.config.write(configfile)
             configfile.close()
+    def query(self, path):
+        return self.config[path]
     def fetch(self, path):
         if not path in self.config:
             raise UserErrorMessage("Invalid package path »%s«" % path)
@@ -209,13 +211,42 @@ def cmd_add(args):
     name = args[0]
     path = args[1] if len(args) > 1 else name
     git = assert_plaur_git()
-    packs = Packages(git);
+    packs = Packages(git)
     prefix = git.call_success('rev-parse', '--show-prefix').strip();
     packs.read()
     packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name)
     packs.write()
     git.call_success("add", git.work_tree() + "/" + packages_file)
     git.call_success('commit', '-m', "Add " + prefix + path);
+
+def cmd_diff(args):
+    """Usage: diff [PATH…]
+
+    For the given PATHs, print the differences between the last verified
+    and the current version.
+    """
+    git = assert_plaur_git()
+    packs = Packages(git)
+    packs.read()
+    prefix = git.call_success('rev-parse', '--show-prefix').strip();
+    # TODO: use $PAGER
+    pager = subprocess.Popen(['less', '-i', '-R', '-K', '-X', '--quit-if-one-screen'],
+                            stdin=subprocess.PIPE,
+                            )
+    for path in args:
+        fullpath = prefix + path
+        package = packs.query(fullpath)
+        package_git = Git(git.work_tree() + "/" + fullpath)
+        last_verified = package['verified']
+        if last_verified == '':
+            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        output  = "\033[0;33m========\033[1;37m %s \033[0;33m========\033[0m\n" % fullpath
+        output += package_git.call_success('diff', '--color=always', last_verified, 'HEAD')
+        output += "\n"
+        pager.stdin.write(output.encode("utf-8"))
+        pager.stdin.flush()
+    pager.stdin.close()
+    pager.wait()
 
 #---------------   main   ---------------
 commands = [
@@ -225,6 +256,7 @@ commands = [
     [ "init",    Command(cmd_init, "Initalize the present directory")],
     [ "add",     Command(cmd_add, "Add a new package")],
     [ "fetch",   Command(cmd_fetch, "Update or create a PKGBUILD from upstream")],
+    [ "diff",    Command(cmd_diff, "Show differences since last verification")],
 ]
 commands_dict = { }
 for k,v in commands:
