@@ -1,12 +1,146 @@
 #!/usr/bin/python
+# vim: et ts=4 sw=4
 # Python 3
 
 import subprocess
 import configparser
-#import os
-#import sys
+import os
+import sys
+import re
+import subprocess
 
-#class Command:
-#    __init__(self, callback)
+#--------------- config ---------------
+# some file paths, all relative to the git root directory:
+packages_file = "packages.ini" # file path to packages config
+
+class UserErrorMessage(Exception):
+    def __init__(self, message):
+        self.message = message
+    def __str__(self):
+        return self.message
+
+#--------------- git wrapper  ---------------
+class Git:
+    # create a wrapper objects to access the git repository
+    # whose git root is at path
+    def __init__(self, path):
+        self.git_dir = path + "/.git"
+        self.git_work_tree = path
+
+    # call a git subcommand, returning a tuple:
+    # stdout,stderr,status
+    def call(self, *args):
+        git_prefix = [ 'git',
+                       '--work-tree=' + self.git_work_tree,
+                       '--git-dir=' + self.git_dir,
+        ]
+        command = git_prefix + list(args)
+        proc = subprocess.Popen(command,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        status = proc.wait()
+        stdout = proc.stdout.read().decode("utf-8")
+        stderr = proc.stderr.read().decode("utf-8")
+        return stdout, stderr, status
+
+    # call a successful, i.e. raise an UserErrorMessage
+    # if the command exists with a status other than 0.
+    # returns stdout as a string
+    def call_success(self, *args):
+        out,err,status = self.call(*args)
+        if status != 0:
+            err = re.sub("[\r\n]*$", "", err)
+            cmd = ' '.join(list(args))
+            if err == '':
+                raise UserErrorMessage("git %s failed with status %d." % (cmd, status))
+            else:
+                raise UserErrorMessage("git %s failed with status %s: %s" %
+                                        (cmd, status, err))
+        if err != '':
+            # just pass stderr
+            print("git: %s" % err, file=sys.stderr)
+        return out
+
+    # returns the absolute path of the working dir
+    def work_tree(self):
+        return self.git_work_tree
+
+# return the absolute path of the git root for the current working directory
+# without trailing slashes, or None, if cwd does not live in a git repository
+def detect_git():
+    cmd = ['git', 'rev-parse', '--show-toplevel']
+    proc = subprocess.Popen(cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    status = proc.wait()
+    stdout = proc.stdout.read().decode("utf-8")
+    stderr = proc.stderr.read().decode("utf-8")
+    if status == 0 and stderr == '':
+        return re.sub('[/\r\n]*$', '', stdout)
+    else:
+        return None;
+
+#--------------- classes  ---------------
+class Command:
+    def __init__(self, callback, description):
+        self.callback = callback
+        self.description = description
+
+class Packages:
+    # git is a Git object representing the main plaur repository
+    def __init__(self, git):
+        self.config = configparser.ConfigParser()
+        self.git = git
+    def read(self):
+        self.config.read(self.git.work_tree() + "/" + packages_file)
+    def write(self):
+        with open(self.git.work_tree() + "/" + packages_file, 'w') as configfile:
+            self.config.write(configfile)
+            configfile.close()
+
+#--------------- commands ---------------
+def cmd_usage(args):
+    print("Usage: %s SUBCOMMANDS [ARGS...]" % program_name)
+    print("where SUBCOMMANDS is one of the following:")
+    print("")
 
 
+    for name,cmd in commands:
+        print("    %-10s%s" % (name,cmd.description))
+
+def cmd_init(args):
+    git_path = detect_git();
+    if git_path != None:
+        raise UserErrorMessage("Already a git repository in »%s«" % git_path)
+    git = Git(os.getcwd())
+    out = git.call_success('init');
+    # create empty packages file
+    p = Packages(git)
+    p.read()
+    p.write()
+    global packages_file
+    git.call_success("add", git.work_tree() + "/" + packages_file)
+    git.call_success("commit", "-m", "Initialize empty %s" % packages_file);
+
+
+
+#---------------   main   ---------------
+commands = [
+    [ "-h",      Command(cmd_usage, "Print this help")],
+    [ "--help",  Command(cmd_usage, "Print this help")],
+    [ "help",    Command(cmd_usage, "Print this help")],
+    [ "init",    Command(cmd_init, "Initalize the present directory")],
+]
+program_name = re.sub('^.*/', '', sys.argv[0])
+
+if len(sys.argv) <= 1:
+    cmd_usage([])
+else:
+    commands_dict = { }
+    for k,v in commands:
+        commands_dict[k] = v
+    if sys.argv[1] in commands_dict:
+        try:
+            commands_dict[sys.argv[1]].callback(sys.argv[2:])
+        except UserErrorMessage as e:
+            print("%s error: %s" % (program_name, e.message))
