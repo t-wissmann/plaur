@@ -19,6 +19,10 @@ class UserErrorMessage(Exception):
     def __str__(self):
         return self.message
 
+def debug(*objs):
+    return True
+    #print("Debug: ", *objs, file=sys.stderr)
+
 #--------------- git wrapper  ---------------
 class Git:
     # create a wrapper objects to access the git repository
@@ -35,6 +39,7 @@ class Git:
                        '--git-dir=' + self.git_dir,
         ]
         command = git_prefix + list(args)
+        debug("Calling »%s«" % ' '.join(command))
         proc = subprocess.Popen(command,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
@@ -127,10 +132,13 @@ class Packages:
     def fetch(self, path):
         if not path in self.config:
             raise UserErrorMessage("Invalid package path »%s«" % path)
-        package_git = Git(self.git.work_tree() + "/" + path)
-        if not os.isdir(fullpath):
-            url = self.config[path].url
-            package_git.call_success("clone", url)
+        fullpath = self.git.work_tree() + "/" + path
+        package_git = Git(fullpath)
+        if not os.path.isdir(fullpath):
+            url = self.config[path]['url']
+            # FIXME: package_git.call_success("clone", url) somehow ignores the --git-dir
+            if 0 != subprocess.call(["git", "clone", url, fullpath]):
+                raise UserErrorMessage("git clone failed for %s" % path)
         else:
             package_git.call_success("pull", "--ff-only")
 
@@ -175,6 +183,20 @@ def cmd_init(args):
     git.call_success("add", git.work_tree() + "/" + packages_file)
     git.call_success("commit", "-m", "Initialize empty %s" % packages_file);
 
+def cmd_fetch(args):
+    """Usage: fetch [PATH…]
+
+    Updates the given PATHs to the current upstream version, and creates them
+    if necessary.
+    """
+    paths = args
+    git = assert_plaur_git()
+    packs = Packages(git);
+    packs.read();
+    prefix = git.call_success('rev-parse', '--show-prefix').strip()
+    for p in paths:
+        packs.fetch(prefix + p)
+
 def cmd_add(args):
     """Usage: add PACKAGENAME [PATH]
 
@@ -202,6 +224,7 @@ commands = [
     [ "help",    Command(cmd_usage, "Print this help or that of a subcommand")],
     [ "init",    Command(cmd_init, "Initalize the present directory")],
     [ "add",     Command(cmd_add, "Add a new package")],
+    [ "fetch",   Command(cmd_fetch, "Update or create a PKGBUILD from upstream")],
 ]
 commands_dict = { }
 for k,v in commands:
