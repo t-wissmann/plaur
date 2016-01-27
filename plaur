@@ -99,16 +99,33 @@ class Packages:
             configfile.close()
 
 #--------------- commands ---------------
+def find_command(name):
+    global commands_dict
+    if name in commands_dict:
+        return commands_dict[name]
+    else:
+        raise UserErrorMessage("No such subcommand »%s«" % name)
+
 def cmd_usage(args):
-    print("Usage: %s SUBCOMMANDS [ARGS...]" % program_name)
-    print("where SUBCOMMANDS is one of the following:")
-    print("")
+    """Usage: help [CMD]
 
-
-    for name,cmd in commands:
-        print("    %-10s%s" % (name,cmd.description))
+    Print the long description of the specified subcommand CMD.
+    If no CMD is given, list all the available subcommands.
+    """
+    if len(args) == 0:
+        print("Usage: %s SUBCOMMANDS [ARGS...]" % program_name)
+        print("where SUBCOMMANDS is one of the following:")
+        print("")
+        for name,cmd in commands:
+            print("    %-10s%s" % (name,cmd.description))
+    else:
+        c = find_command(args[0])
+        print(program_name + " " + args[0] + ": " + c.description)
+        print()
+        print(c.callback.__doc__)
 
 def cmd_init(args):
+    """Initialize an empty plaur repository in the current working directory"""
     git_path = detect_git();
     if git_path != None:
         raise UserErrorMessage("Already a git repository in »%s«" % git_path)
@@ -122,25 +139,34 @@ def cmd_init(args):
     git.call_success("add", git.work_tree() + "/" + packages_file)
     git.call_success("commit", "-m", "Initialize empty %s" % packages_file);
 
+def cmd_add(args):
+    """Usage: add PACKAGENAME [PATH]
 
+    Add a package with name PACKAGENAME and put it in the directory specified
+    by PATH (either absolute or relative to the current working directory).
+    PATH defaults to PACKAGENAME.
+    """
+    if (len(args) < 1):
+        raise UserErrorMessage("To few arguments")
 
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help")],
     [ "--help",  Command(cmd_usage, "Print this help")],
-    [ "help",    Command(cmd_usage, "Print this help")],
+    [ "help",    Command(cmd_usage, "Print this help or that of a subcommand")],
     [ "init",    Command(cmd_init, "Initalize the present directory")],
+    [ "add",     Command(cmd_add, "Add a new package")],
 ]
+commands_dict = { }
+for k,v in commands:
+    commands_dict[k] = v
 program_name = re.sub('^.*/', '', sys.argv[0])
 
 if len(sys.argv) <= 1:
     cmd_usage([])
 else:
-    commands_dict = { }
-    for k,v in commands:
-        commands_dict[k] = v
-    if sys.argv[1] in commands_dict:
-        try:
-            commands_dict[sys.argv[1]].callback(sys.argv[2:])
-        except UserErrorMessage as e:
-            print("%s error: %s" % (program_name, e.message))
+    try:
+        c = find_command(sys.argv[1])
+        c.callback(sys.argv[2:])
+    except UserErrorMessage as e:
+        print("%s error: %s" % (program_name, e.message))
