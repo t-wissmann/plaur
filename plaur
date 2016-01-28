@@ -121,11 +121,12 @@ class Packages:
     def __init__(self, git):
         self.config = configparser.ConfigParser()
         self.git = git
-    def add(self, path, url):
+    def add(self, path, url, asdeps=False):
         # TODO: check that path is prefix-free to all the other paths
         self.config[path] = {
             'url' : url,
             'verified' : "",
+            'asdeps' : asdeps,
         }
     def read(self):
         self.config.read(self.git.work_tree() + "/" + packages_file)
@@ -209,12 +210,19 @@ def cmd_fetch(args):
         packs.fetch(prefix + p)
 
 def cmd_add(args):
-    """Usage: add PACKAGENAME [PATH]
+    """Usage: add [--asdeps] PACKAGENAME [PATH]
 
     Add a package with name PACKAGENAME and put it in the directory specified
     by PATH (either absolute or relative to the current working directory).
     PATH defaults to PACKAGENAME.
+
+    If --asdeps is supplied, then the package will be marked as being a
+    dependency for another package.
     """
+    asdeps = False
+    if (len(args) >= 1 and args[0] == '--asdeps'):
+        asdeps = True
+        args = args[1:]
     if (len(args) < 1):
         raise UserErrorMessage("To few arguments")
     name = args[0]
@@ -223,7 +231,7 @@ def cmd_add(args):
     packs = Packages(git)
     prefix = git.prefix_of_cwd()
     packs.read()
-    packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name)
+    packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name, asdeps)
     packs.write()
     packs.commit("Add " + prefix + path);
 
