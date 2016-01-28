@@ -300,11 +300,17 @@ def cmd_verify(args):
         packs.commit("Verify " + fullpath)
 
 def cmd_build(args):
-    """Usage: build [PATH…]
+    """Usage: build [--install] [PATH…]
 
     Execute makepkg in those of the given PATHs, that are verified, and skip
     the other (unverified) PATHs.
+
+    If --install is passed, then the built packages are installed directly.
     """
+    install = False
+    if (len(args) >= 1 and args[0] == '--install'):
+        install = True
+        args = args[1:]
     git = assert_plaur_git()
     packs = Packages(git)
     packs.read()
@@ -321,7 +327,12 @@ def cmd_build(args):
         last_verified = package_git.call_success('rev-parse', last_verified).strip();
         if package_HEAD == last_verified:
             print("Running makepkg in %s" % fullpath)
-            proc = subprocess.Popen(['makepkg'],
+            makepkg = ['makepkg']
+            if install:
+                makepkg += ['-i']
+                if packs.query(fullpath).getboolean('asdeps', fallback=False):
+                    makepkg += ['--asdeps']
+            proc = subprocess.Popen(makepkg,
                                     cwd=git.work_tree() + "/" + fullpath,
                                     )
             status = proc.wait()
