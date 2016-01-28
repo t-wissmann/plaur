@@ -76,6 +76,10 @@ class Git:
     def is_plaur_repo(self):
         return self.is_tracked(self.git_work_tree + "/" + packages_file);
 
+    # returns the CWD relative to the root of the working tree
+    def prefix_of_cwd(self):
+        return self.call_success('rev-parse', '--show-prefix').strip()
+
     # returns the absolute path of the working dir
     def work_tree(self):
         return self.git_work_tree
@@ -200,7 +204,7 @@ def cmd_fetch(args):
     git = assert_plaur_git()
     packs = Packages(git);
     packs.read();
-    prefix = git.call_success('rev-parse', '--show-prefix').strip()
+    prefix = git.prefix_of_cwd()
     for p in paths:
         packs.fetch(prefix + p)
 
@@ -217,7 +221,7 @@ def cmd_add(args):
     path = args[1] if len(args) > 1 else name
     git = assert_plaur_git()
     packs = Packages(git)
-    prefix = git.call_success('rev-parse', '--show-prefix').strip();
+    prefix = git.prefix_of_cwd()
     packs.read()
     packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name)
     packs.write()
@@ -232,7 +236,7 @@ def cmd_diff(args):
     git = assert_plaur_git()
     packs = Packages(git)
     packs.read()
-    prefix = git.call_success('rev-parse', '--show-prefix').strip();
+    prefix = git.prefix_of_cwd()
     # TODO: use $PAGER
     pager = subprocess.Popen(['less', '-i', '-R', '-K', '-X', '--quit-if-one-screen'],
                             stdin=subprocess.PIPE,
@@ -262,7 +266,7 @@ def cmd_verify(args):
     git = assert_plaur_git()
     packs = Packages(git)
     packs.read()
-    prefix = git.call_success('rev-parse', '--show-prefix').strip();
+    prefix = git.prefix_of_cwd()
     for path in args:
         fullpath = prefix + path
         package = packs.query(fullpath)
