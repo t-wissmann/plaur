@@ -144,6 +144,11 @@ class Packages:
         else:
             package_git.call_success("pull", "--ff-only")
 
+    # commit the packages file (and all other staged changes) to the git
+    def commit(self, message):
+        self.git.call_success("add", self.git.work_tree() + "/" + packages_file)
+        self.git.call_success('commit', '-m', message);
+
 #--------------- commands ---------------
 def find_command(name):
     global commands_dict
@@ -216,8 +221,7 @@ def cmd_add(args):
     packs.read()
     packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name)
     packs.write()
-    git.call_success("add", git.work_tree() + "/" + packages_file)
-    git.call_success('commit', '-m', "Add " + prefix + path);
+    packs.commit("Add " + prefix + path);
 
 def cmd_diff(args):
     """Usage: diff [PATH…]
@@ -248,6 +252,27 @@ def cmd_diff(args):
     pager.stdin.close()
     pager.wait()
 
+def cmd_verify(args):
+    """Usage: verify [PATH…]
+
+    For the given PATHs, mark the current version as verified.
+    This means, that the PKGBUILD (and the attached files) in them can be
+    sourced and executed.
+    """
+    git = assert_plaur_git()
+    packs = Packages(git)
+    packs.read()
+    prefix = git.call_success('rev-parse', '--show-prefix').strip();
+    for path in args:
+        fullpath = prefix + path
+        package = packs.query(fullpath)
+        package_git = Git(git.work_tree() + "/" + fullpath)
+        package_HEAD = package_git.call_success('rev-parse', 'HEAD').strip();
+        print ("Verifying %s to %s." % (fullpath, package_HEAD))
+        package['verified'] = package_HEAD
+        packs.write()
+        packs.commit("Verify " + fullpath)
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help")],
@@ -257,6 +282,7 @@ commands = [
     [ "add",     Command(cmd_add, "Add a new package")],
     [ "fetch",   Command(cmd_fetch, "Update or create a PKGBUILD from upstream")],
     [ "diff",    Command(cmd_diff, "Show differences since last verification")],
+    [ "verify",  Command(cmd_verify, "Verify a pkgbuild")],
 ]
 commands_dict = { }
 for k,v in commands:
