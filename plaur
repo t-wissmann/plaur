@@ -18,6 +18,8 @@ class UserErrorMessage(Exception):
         self.message = message
     def __str__(self):
         return self.message
+    def print(self):
+        print("%s error: %s" % (program_name, self.message))
 
 def debug(*objs):
     #print("Debug: ", *objs, file=sys.stderr)
@@ -83,6 +85,17 @@ class Git:
     # returns the absolute path of the working dir
     def work_tree(self):
         return self.git_work_tree
+
+    # tells whether the git exists in the file system
+    def exists(self):
+        return os.path.isdir(self.git_work_tree) and os.path.isdir(self.git_dir)
+
+    # exit with an error message if the git directory does not exist
+    def assert_exists(self):
+        if not os.path.isdir(self.git_dir):
+            raise UserErrorMessage("Git directory %s does not exist" % self.git_dir)
+        if not os.path.isdir(self.git_work_tree):
+            raise UserErrorMessage("Git work tree %s does not exist" % self.git_work_tree)
 
 # return the absolute path of the git root for the current working directory
 # without trailing slashes, or None, if cwd does not live in a git repository
@@ -279,11 +292,42 @@ def cmd_verify(args):
         fullpath = prefix + path
         package = packs.query(fullpath)
         package_git = Git(git.work_tree() + "/" + fullpath)
+        package_git.assert_exists()
         package_HEAD = package_git.call_success('rev-parse', 'HEAD').strip();
         print ("Verifying %s to %s." % (fullpath, package_HEAD))
         package['verified'] = package_HEAD
         packs.write()
         packs.commit("Verify " + fullpath)
+
+def cmd_build(args):
+    """Usage: build [PATH…]
+
+    Execute makepkg in those of the given PATHs, that are verified, and skip
+    the other (unverified) PATHs.
+    """
+    git = assert_plaur_git()
+    packs = Packages(git)
+    packs.read()
+    prefix = git.prefix_of_cwd()
+    for path in args:
+        fullpath = prefix + path
+        package = packs.query(fullpath)
+        package_git = Git(git.work_tree() + "/" + fullpath)
+        package_git.assert_exists()
+        package_HEAD = package_git.call_success('rev-parse', 'HEAD').strip();
+        last_verified = package['verified']
+        if last_verified == '':
+            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        last_verified = package_git.call_success('rev-parse', last_verified).strip();
+        if package_HEAD == last_verified:
+            print("Running makepkg in %s" % fullpath)
+            proc = subprocess.Popen(['makepkg'],
+                                    cwd=git.work_tree() + "/" + fullpath,
+                                    )
+            status = proc.wait()
+        else:
+            print("Skipping unverified %s" % fullpath)
+
 
 #---------------   main   ---------------
 commands = [
@@ -295,6 +339,7 @@ commands = [
     [ "fetch",   Command(cmd_fetch, "Update or create a PKGBUILD from upstream")],
     [ "diff",    Command(cmd_diff, "Show differences since last verification")],
     [ "verify",  Command(cmd_verify, "Verify a pkgbuild")],
+    [ "build",   Command(cmd_build, "Build the specified packages")],
 ]
 commands_dict = { }
 for k,v in commands:
@@ -308,4 +353,5 @@ else:
         c = find_command(sys.argv[1])
         c.callback(sys.argv[2:])
     except UserErrorMessage as e:
-        print("%s error: %s" % (program_name, e.message))
+        e.print()
+        sys.exit(1)
