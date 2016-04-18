@@ -252,6 +252,8 @@ def cmd_fetch(args):
 
     Updates the given PATHs to the current upstream version, and creates them
     if necessary.
+
+    If no PATH is given, then all configured paths will be fetched.
     """
     paths = args
     git = assert_plaur_git()
@@ -295,6 +297,9 @@ def cmd_diff(args):
 
     For the given PATHs, print the differences between the last verified
     and the current version.
+
+    If no PATH is specified, then the difference of all paths with changes will
+    be shown.
     """
     git = assert_plaur_git()
     packs = Packages(git)
@@ -334,6 +339,8 @@ def cmd_verify(args):
     For the given PATHs, mark the current version as verified.
     This means, that the PKGBUILD (and the attached files) in them can be
     sourced and executed.
+
+    If no PATH is specified, then all paths are verified interactively.
     """
     git = assert_plaur_git()
     packs = Packages(git)
