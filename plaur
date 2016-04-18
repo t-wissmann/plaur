@@ -25,6 +25,51 @@ def debug(*objs):
     #print("Debug: ", *objs, file=sys.stderr)
     return True
 
+class SRCINFO:
+    # parse a .SRCINFO file and provide some wrapper functions
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.reload
+
+    def reload(self):
+        self.sections = { }
+        f = open(self.filepath, 'r')
+        lines = f.readlines()
+        f.close()
+        is_emptyline = re.compile('^[ \\t]*(#.*)?$')
+        is_header = re.compile('^(?P<name>[^= \\t]+) = (?P<value>.*)$')
+        is_option = re.compile('^\t(?P<name>[^= \\t]+) = (?P<value>.*)$')
+        current_section = { }
+        current_header = None
+        class Holder(object):
+            def set(self, v):
+                self.v = v
+                return v
+            def get(self):
+                return self.v
+        h = Holder()
+        for i, line in enumerate(lines):
+            line = line.rstrip('\r\n')
+            if (is_emptyline.match(line)):
+                #print("%d SKIP %s" % (i,line))
+                continue
+            elif h.set(is_header.match(line)):
+                #print("%d header %s" %(i,line))
+                if current_header != None:
+                    self.sections[current_header] = current_section
+                current_header = (h.get().group('name'),h.get().group('value'))
+                current_section = { }
+            elif h.set(is_option.match(line)):
+                current_section[h.get().group('name')] = h.get().group('value')
+            else:
+                raise UserErrorMessage("Line %d: unrecognized syntax: \"%s\"" % (i+1, line))
+        # save the last section
+        if current_header != None:
+            self.sections[current_header] = current_section
+        print(self.sections)
+    # example usage:
+    # SRCINFO('.SRCINFO').reload()
+
 # thanks to http://stackoverflow.com/questions/510357/python-read-a-single-character-from-the-user
 class _GetchUnix:
     def __init__(self):
