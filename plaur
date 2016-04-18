@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # vim: et ts=4 sw=4
 # Python 3
 
@@ -24,6 +24,41 @@ class UserErrorMessage(Exception):
 def debug(*objs):
     #print("Debug: ", *objs, file=sys.stderr)
     return True
+
+# thanks to http://stackoverflow.com/questions/510357/python-read-a-single-character-from-the-user
+class _GetchUnix:
+    def __init__(self):
+        import tty, sys
+
+    def __call__(self):
+        import sys, tty, termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
+def ask(message,default_yes=True):
+    if default_yes:
+        answers = '[Yn]'
+    else:
+        answers = '[yN]'
+    print("%s %s " % (message,answers),end="",flush=True)
+    ch = _GetchUnix()()
+    if not ch == '\n':
+        print(ch,flush=True)
+    if ch.lower() == 'y':
+        return True
+    elif ch.lower() == 'n':
+        return False
+    else:
+        return default_yes
+
+def colored_header(message):
+    return ("\033[0;33m========\033[1;37m %s \033[0;33m========\033[0m\n" % message)
 
 #--------------- git wrapper  ---------------
 class Git:
@@ -149,6 +184,10 @@ class Packages:
             configfile.close()
     def query(self, path):
         return self.config[path]
+    def paths(self):
+        names = list(self.config.keys())
+        names.remove('DEFAULT')
+        return names
     def fetch(self, path):
         if not path in self.config:
             raise UserErrorMessage("Invalid package path »%s«" % path)
@@ -219,6 +258,9 @@ def cmd_fetch(args):
     packs = Packages(git);
     packs.read();
     prefix = git.prefix_of_cwd()
+    if not paths:
+        # if no path is given, implicitly use all paths saved
+        paths = packs.paths()
     for p in paths:
         packs.fetch(prefix + p)
 
@@ -262,15 +304,24 @@ def cmd_diff(args):
     pager = subprocess.Popen(['less', '-i', '-R', '-K', '-X', '--quit-if-one-screen'],
                             stdin=subprocess.PIPE,
                             )
-    for path in args:
+    paths = args
+    hide_if_unchanged = False
+    if not paths:
+        # if no path is given, implicitly use all paths saved
+        paths = packs.paths()
+        hide_if_unchanged = True
+    for path in paths:
         fullpath = prefix + path
         package = packs.query(fullpath)
         package_git = Git(git.work_tree() + "/" + fullpath)
         last_verified = package['verified']
         if last_verified == '':
             last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
-        output  = "\033[0;33m========\033[1;37m %s \033[0;33m========\033[0m\n" % fullpath
-        output += package_git.call_success('diff', '--color=always', last_verified, 'HEAD')
+        diff_string = package_git.call_success('diff', '--color=always', last_verified, 'HEAD')
+        if hide_if_unchanged and diff_string.lstrip() == '':
+            continue
+        output  = colored_header(fullpath)
+        output += diff_string
         output += "\n"
         pager.stdin.write(output.encode("utf-8"))
         pager.stdin.flush()
@@ -288,16 +339,34 @@ def cmd_verify(args):
     packs = Packages(git)
     packs.read()
     prefix = git.prefix_of_cwd()
-    for path in args:
+    user_confirm = False
+    show_diffs = False # this makes only sense if user_confirm is set to True
+    paths = args
+    if not paths:
+        # if no path is given, implicitly use all paths saved
+        paths = packs.paths()
+        user_confirm = True
+        show_diffs = True
+    for path in paths:
         fullpath = prefix + path
         package = packs.query(fullpath)
         package_git = Git(git.work_tree() + "/" + fullpath)
         package_git.assert_exists()
         package_HEAD = package_git.call_success('rev-parse', 'HEAD').strip();
-        print ("Verifying %s to %s." % (fullpath, package_HEAD))
-        package['verified'] = package_HEAD
-        packs.write()
-        packs.commit("Verify " + fullpath)
+        last_verified = package['verified']
+        if last_verified == '':
+            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        if last_verified == package_HEAD:
+            print("%s up to date (on %s)." % (fullpath, last_verified))
+            continue
+        if show_diffs:
+            print(colored_header("Changes in " + fullpath))
+            print(package_git.call_success('diff', '--color=always', last_verified, 'HEAD'))
+        if not user_confirm or ask("Verify %s to %s?" % (fullpath, package_HEAD),default_yes=False):
+            print ("Verifying %s to %s." % (fullpath, package_HEAD))
+            package['verified'] = package_HEAD
+            packs.write()
+            packs.commit("Verify " + fullpath)
 
 def cmd_build(args):
     """Usage: build [--install] [PATH…]
