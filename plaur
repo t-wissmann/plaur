@@ -132,6 +132,9 @@ class Git:
         if not os.path.isdir(self.git_work_tree):
             raise UserErrorMessage("Git work tree %s does not exist" % self.git_work_tree)
 
+    def HEAD(self):
+        return self.call_success('rev-parse', 'HEAD').strip()
+
 # return the absolute path of the git root for the current working directory
 # without trailing slashes, or None, if cwd does not live in a git repository
 def detect_git():
@@ -169,6 +172,8 @@ class PackageConfig:
     def __init__(self, git):
         self.config = configparser.ConfigParser()
         self.git = git
+        self.package_objects = {}
+
     def add(self, path, url, asdeps=False):
         # TODO: check that path is prefix-free to all the other paths
         self.config[path] = {
@@ -188,23 +193,54 @@ class PackageConfig:
         names = list(self.config.keys())
         names.remove('DEFAULT')
         return names
-    def fetch(self, path):
+
+    def get_package(self,path):
         if not path in self.config:
             raise UserErrorMessage("Invalid package path »%s«" % path)
-        fullpath = self.git.work_tree() + "/" + path
-        package_git = Git(fullpath)
-        if not os.path.isdir(fullpath):
-            url = self.config[path]['url']
-            # FIXME: package_git.call_success("clone", url) somehow ignores the --git-dir
-            if 0 != subprocess.call(["git", "clone", url, fullpath]):
-                raise UserErrorMessage("git clone failed for %s" % path)
+        elif path in self.package_objects:
+            return self.package_objects[path]
         else:
-            package_git.call_success("pull", "--ff-only")
+            obj = Package(self,path)
+            self.package_objects[path] = obj
+            return obj
+
+    def fetch(self, path):
+        self.get_package(path).fetch()
+
+    def __getitem__(self,key):
+        return self.get_package(key)
 
     # commit the packages file (and all other staged changes) to the git
     def commit(self, message):
         self.git.call_success("add", self.git.work_tree() + "/" + packages_file)
         self.git.call_success('commit', '-m', message);
+
+class Package:
+    # Package represents a concrete section of a PackageConfig
+    def __init__(self, pacconf, path):
+        # link to parent PackageConfig
+        self.pacconf = pacconf
+        self.path = path # path relative to plaur-repo
+        if not self.path in self.pacconf.config:
+            raise UserErrorMessage("Invalid package path »%s«" % path)
+        self.settings = self.pacconf.config[self.path]
+        self.fullpath = self.pacconf.git.work_tree() + "/" + self.path # absolute filepath
+        self.git = Git(self.fullpath)
+
+    def fetch(self):
+        if not os.path.isdir(self.fullpath):
+            url = self.settings['url']
+            # FIXME: package_git.call_success("clone", url) somehow ignores the --git-dir
+            if 0 != subprocess.call(["git", "clone", url, self.fullpath]):
+                raise UserErrorMessage("git clone failed for %s" % self.path)
+        else:
+            self.git.call_success("pull", "--ff-only")
+
+    def last_verified(self):
+        last_verified = self.settings['verified']
+        if last_verified == '':
+            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        return last_verified
 
 #--------------- commands ---------------
 def find_command(name):
@@ -317,12 +353,9 @@ def cmd_diff(args):
         hide_if_unchanged = True
     for path in paths:
         fullpath = prefix + path
-        package = packs.query(fullpath)
-        package_git = Git(git.work_tree() + "/" + fullpath)
-        last_verified = package['verified']
-        if last_verified == '':
-            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
-        diff_string = package_git.call_success('diff', '--color=always', last_verified, 'HEAD')
+        package = packs[fullpath]
+        last_verified = package.last_verified()
+        diff_string = package.git.call_success('diff', '--color=always', last_verified, 'HEAD')
         if hide_if_unchanged and diff_string.lstrip() == '':
             continue
         output  = colored_header(fullpath)
@@ -356,22 +389,19 @@ def cmd_verify(args):
         show_diffs = True
     for path in paths:
         fullpath = prefix + path
-        package = packs.query(fullpath)
-        package_git = Git(git.work_tree() + "/" + fullpath)
-        package_git.assert_exists()
-        package_HEAD = package_git.call_success('rev-parse', 'HEAD').strip();
-        last_verified = package['verified']
-        if last_verified == '':
-            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        package = packs[fullpath]
+        package.git.assert_exists()
+        package_HEAD = package.git.HEAD();
+        last_verified = package.last_verified()
         if last_verified == package_HEAD:
             print("%s up to date (on %s)." % (fullpath, last_verified))
             continue
         if show_diffs:
             print(colored_header("Changes in " + fullpath))
-            print(package_git.call_success('diff', '--color=always', last_verified, 'HEAD'))
+            print(package.git.call_success('diff', '--color=always', last_verified, 'HEAD'))
         if not user_confirm or ask("Verify %s to %s?" % (fullpath, package_HEAD),default_yes=False):
             print ("Verifying %s to %s." % (fullpath, package_HEAD))
-            package['verified'] = package_HEAD
+            package.settings['verified'] = package_HEAD
             packs.write()
             packs.commit("Verify " + fullpath)
 
