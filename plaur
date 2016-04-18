@@ -164,7 +164,7 @@ class Command:
         self.callback = callback
         self.description = description
 
-class Packages:
+class PackageConfig:
     # git is a Git object representing the main plaur repository
     def __init__(self, git):
         self.config = configparser.ConfigParser()
@@ -240,7 +240,7 @@ def cmd_init(args):
     git = Git(os.getcwd())
     out = git.call_success('init');
     # create empty packages file
-    p = Packages(git)
+    p = PackageConfig(git)
     p.read()
     p.write()
     global packages_file
@@ -257,7 +257,7 @@ def cmd_fetch(args):
     """
     paths = args
     git = assert_plaur_git()
-    packs = Packages(git);
+    packs = PackageConfig(git);
     packs.read();
     prefix = git.prefix_of_cwd()
     if not paths:
@@ -285,7 +285,7 @@ def cmd_add(args):
     name = args[0]
     path = args[1] if len(args) > 1 else name
     git = assert_plaur_git()
-    packs = Packages(git)
+    packs = PackageConfig(git)
     prefix = git.prefix_of_cwd()
     packs.read()
     packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name, asdeps)
@@ -302,7 +302,7 @@ def cmd_diff(args):
     be shown.
     """
     git = assert_plaur_git()
-    packs = Packages(git)
+    packs = PackageConfig(git)
     packs.read()
     prefix = git.prefix_of_cwd()
     # TODO: use $PAGER
@@ -343,7 +343,7 @@ def cmd_verify(args):
     If no PATH is specified, then all paths are verified interactively.
     """
     git = assert_plaur_git()
-    packs = Packages(git)
+    packs = PackageConfig(git)
     packs.read()
     prefix = git.prefix_of_cwd()
     user_confirm = False
@@ -388,7 +388,7 @@ def cmd_build(args):
         install = True
         args = args[1:]
     git = assert_plaur_git()
-    packs = Packages(git)
+    packs = PackageConfig(git)
     packs.read()
     prefix = git.prefix_of_cwd()
     for path in args:
