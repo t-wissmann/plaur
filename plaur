@@ -255,11 +255,12 @@ class Git:
 
 # return the absolute path of the git root for the current working directory
 # without trailing slashes, or None, if cwd does not live in a git repository
-def detect_git():
+def detect_git(cwd='.'):
     cmd = ['git', 'rev-parse', '--show-toplevel']
     proc = subprocess.Popen(cmd,
                             stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+                            stderr=subprocess.PIPE,
+                            cwd=cwd)
     status = proc.wait()
     stdout = proc.stdout.read().decode("utf-8")
     stderr = proc.stderr.read().decode("utf-8")
@@ -275,8 +276,17 @@ def assert_plaur_git():
         raise UserErrorMessage("Not in a plaur git repository")
     git = Git(gitpath)
     if not git.is_plaur_repo():
-        raise UserErrorMessage("Present git repository in »%s« is not a plaur repository"
-                               % git.work_tree())
+        # if this detected git is not a plaur repository,
+        # then maybe it's just a pkgbuild repo, so try the parent directory as
+        # well:
+        (gitpath,_) = os.path.split(gitpath.rstrip('/'))
+        gitpath = detect_git(cwd=gitpath)
+        if gitpath == None:
+            raise UserErrorMessage("Not in a plaur git repository")
+        git = Git(gitpath)
+        if not git.is_plaur_repo():
+            raise UserErrorMessage("Present directory is not in a plaur repository")
+    #print(gitpath)
     return git
 
 #--------------- classes  ---------------
@@ -414,7 +424,10 @@ def cmd_fetch(args):
     packs = PackageConfig(git);
     packs.read();
     prefix = git.prefix_of_cwd()
-    if not paths:
+    if paths:
+        # prepend a prefix to paths, depending on the cwd
+        paths = [ prefix + p for p in paths ]
+    else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
     draw_progressbar = True
@@ -422,8 +435,8 @@ def cmd_fetch(args):
     #pg.set(0.0)
     for i,p in enumerate(paths):
         #pg.set(float(i) / len(paths))
-        print("Fetching %s" % (prefix + p))
-        packs.fetch(prefix + p)
+        print("Fetching %s" % p)
+        packs.fetch(p)
     #pg.set(1.0)
 
 def cmd_add(args):
@@ -471,12 +484,14 @@ def cmd_diff(args):
                             )
     paths = args
     hide_if_unchanged = False
-    if not paths:
+    if paths:
+        # prepend a prefix to paths, depending on the cwd
+        paths = [ prefix + p for p in paths ]
+    else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
         hide_if_unchanged = True
-    for path in paths:
-        fullpath = prefix + path
+    for fullpath in paths:
         package = packs[fullpath]
         last_verified = package.last_verified()
         diff_string = package.git.call_success('diff', '--color=always', last_verified, 'HEAD')
@@ -506,13 +521,15 @@ def cmd_verify(args):
     user_confirm = False
     show_diffs = False # this makes only sense if user_confirm is set to True
     paths = args
-    if not paths:
+    if paths:
+        # prepend a prefix to paths, depending on the cwd
+        paths = [ prefix + p for p in paths ]
+    else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
         user_confirm = True
         show_diffs = True
-    for path in paths:
-        fullpath = prefix + path
+    for fullpath in paths:
         package = packs[fullpath]
         package.git.assert_exists()
         package_HEAD = package.git.HEAD();
