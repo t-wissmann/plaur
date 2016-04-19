@@ -302,9 +302,10 @@ def assert_plaur_git():
 
 #--------------- classes  ---------------
 class Command:
-    def __init__(self, callback, description):
+    def __init__(self, callback, description, is_alias=False):
         self.callback = callback
         self.description = description
+        self.is_alias = is_alias
 
 class PackageConfig:
     # git is a Git object representing the main plaur repository
@@ -639,6 +640,9 @@ COMMANDS
 --------
 """ % (program_name, program_name) )
     for name,c in sorted(commands_dict.items()):
+        if c.is_alias:
+            # avoid multiple entries due to command aliases
+            continue
         # extract the usage line:
         if c.callback.__doc__ == None:
             description = ""
@@ -668,9 +672,9 @@ Github page: http://github.com/t-wissmann/plaur
 
 #---------------   main   ---------------
 commands = [
-    [ "-h",      Command(cmd_usage, "Print this help")],
-    [ "--help",  Command(cmd_usage, "Print this help")],
-    [ "help",    Command(cmd_usage, "Print this help or that of a subcommand")],
+    [ "-h",      Command(cmd_usage, "Print this help", is_alias=True)],
+    [ "--help",  Command(cmd_usage, "Print this help", is_alias=True)],
+    [ "help",    Command(cmd_usage, "Print general help or that of a subcommand")],
     [ "init",    Command(cmd_init, "Initalize the present directory")],
     [ "add",     Command(cmd_add, "Add a new package")],
     [ "fetch",   Command(cmd_fetch, "Update or create a PKGBUILD from upstream")],
