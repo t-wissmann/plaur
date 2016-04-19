@@ -30,6 +30,7 @@ class SRCINFO:
     def __init__(self, filepath):
         self.filepath = filepath
         self.reload
+        self.sections = { }
 
     def reload(self):
         self.sections = { }
@@ -66,9 +67,28 @@ class SRCINFO:
         # save the last section
         if current_header != None:
             self.sections[current_header] = current_section
-        print(self.sections)
+        #print(self.sections)
     # example usage:
     # SRCINFO('.SRCINFO').reload()
+
+    def packages(self):
+        for sectype,secname in self.sections:
+            if sectype == "pkgname":
+                yield secname
+
+    def query_option(self,pkgname,key):
+        value = []
+        fallback_value = []
+        for (sectype,secname),options in self.sections.items():
+            if sectype == "pkgname" and secname == pkgname:
+                if key in options:
+                    value += [ options[key] ]
+            if sectype == "pkgbase":
+                if key in options:
+                    fallback_value += [ options[key] ]
+        if value == []:
+            value = fallback_value
+        return value
 
 # from http://stackoverflow.com/questions/566746/how-to-get-console-window-width-in-python
 def getTerminalSize():
