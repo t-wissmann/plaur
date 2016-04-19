@@ -609,32 +609,57 @@ def cmd_git(args):
     sys.exit(git.plain_call(*args))
 
 def cmd_asciidoc(args):
-    """Usage: asciidoc
-
-    Generate the documentation in the asciidoc format.
-    """
     global commands_dict
     flag = re.compile('(?P<flag>--[\w-]+)')
     argname = re.compile('(?P<argname>[A-Z][A-Z0-9…]+)')
     print("""%s(1)
-=====
+=======
 :doctype: manpage
-:man version: git
+
 
 NAME
 ----
 %s - a pleasant AUR helper using the power of git
+
+
+SYNOPSIS
+--------
+*plaur* 'SUBCOMMAND' ['ARGS'…]
+
+
+DESCRIPTION
+-----------
+Calls the given *plaur* subcommand. The meanings of the arguments 'ARGS' depend
+on the 'SUBCOMMAND'. The available commands and their meanings are described in
+the <<COMMANDS,*COMMANDS*>> section.
+
+[[COMMANDS]]
+COMMANDS
+--------
         """ % (program_name, program_name) )
-    for name,c in commands_dict.items():
+    for name,c in sorted(commands_dict.items()):
         # extract the usage line:
-        (usage,longdesc) = c.callback.__doc__.split('\n', 1)
+        if c.callback.__doc__ == None:
+            description = ""
+        else:
+            description = c.callback.__doc__.rstrip('\n ')
+        description = flag.sub(r'*\1*', description)
+        description = argname.sub(r"'\1'", description)
+        usage_rest = description.split('\n', 1)
+        if len(usage_rest) == 0 or usage_rest[0] == '':
+            usage = name
+            longdesc = ""
+        elif len(usage_rest) == 1:
+            usage = usage_rest[0]
+            longdesc = ""
+        else:
+            usage = usage_rest[0]
+            longdesc = usage_rest[1]
         if usage.startswith("Usage: "):
             usage = usage[len("Usage: "):]
-        usage = flag.sub(r'*\1*', usage)
-        usage = argname.sub(r"'\1'", usage)
         print ('\n' + usage + '::')
         print ('    __' + c.description + '__')
-        print (longdesc)
+        print (re.compile('^$', re.MULTILINE).sub(r'    +', longdesc))
         #c.description
         #print()
         #print(c.callback.__doc__)
