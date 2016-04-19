@@ -1,7 +1,7 @@
 A2X = a2x
 ASCIIDOC = asciidoc
 
-.PHONY: doc
+.PHONY: doc clean
 
 doc: plaur.1 plaur.html
 
@@ -13,4 +13,7 @@ plaur.html: plaur.txt
 
 plaur.txt: plaur
 	./plaur asciidoc > $@
+
+clean:
+	rm -f plaur.1 plaur.html plaur.txt
 

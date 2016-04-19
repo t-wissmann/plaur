@@ -2,3 +2,10 @@
 *~
 .*.swp
 
+
+# generated file types
+*.1
+*.html
+
+# generated files
+plaur.txt
