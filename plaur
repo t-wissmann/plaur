@@ -498,7 +498,7 @@ def cmd_diff(args):
         diff_string = package.git.call_success('diff', '--color=always', last_verified, 'HEAD')
         if hide_if_unchanged and diff_string.lstrip() == '':
             continue
-        output  = colored_header(fullpath)
+        output  = colored_header(package.path)
         output += diff_string
         output += "\n"
         pager.stdin.write(output.encode("utf-8"))
@@ -536,16 +536,16 @@ def cmd_verify(args):
         package_HEAD = package.git.HEAD();
         last_verified = package.last_verified()
         if last_verified == package_HEAD:
-            print("%s up to date (on %s)." % (fullpath, last_verified))
+            print("%s up to date (on %s)." % (package.path, last_verified))
             continue
         if show_diffs:
-            print(colored_header("Changes in " + fullpath))
+            print(colored_header("Changes in " + package.path))
             print(package.git.call_success('diff', '--color=always', last_verified, 'HEAD'))
-        if not user_confirm or ask("Verify %s to %s?" % (fullpath, package_HEAD),default_yes=False):
-            print ("Verifying %s to %s." % (fullpath, package_HEAD))
+        if not user_confirm or ask("Verify %s to %s?" % (package.path, package_HEAD),default_yes=False):
+            print ("Verifying %s to %s." % (package.path, package_HEAD))
             package.settings['verified'] = package_HEAD
             packs.write()
-            packs.commit("Verify " + fullpath)
+            packs.commit("Verify " + package.path)
 
 def cmd_build(args):
     """Usage: build [--install] [PATH…]
@@ -565,27 +565,23 @@ def cmd_build(args):
     prefix = git.prefix_of_cwd()
     for path in args:
         fullpath = prefix + path
-        package = packs.query(fullpath)
-        package_git = Git(git.work_tree() + "/" + fullpath)
-        package_git.assert_exists()
-        package_HEAD = package_git.call_success('rev-parse', 'HEAD').strip();
-        last_verified = package['verified']
-        if last_verified == '':
-            last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
-        last_verified = package_git.call_success('rev-parse', last_verified).strip();
+        package = packs[fullpath]
+        package.git.assert_exists()
+        package_HEAD = package.git.HEAD()
+        last_verified = package.last_verified()
         if package_HEAD == last_verified:
-            print("Running makepkg in %s" % fullpath)
+            print("Running makepkg in %s" % package.path)
             makepkg = ['makepkg']
             if install:
                 makepkg += ['-i']
-                if packs.query(fullpath).getboolean('asdeps', fallback=False):
+                if package.settings.getboolean('asdeps', fallback=False):
                     makepkg += ['--asdeps']
             proc = subprocess.Popen(makepkg,
-                                    cwd=git.work_tree() + "/" + fullpath,
+                                    cwd=git.work_tree() + "/" + package.path,
                                     )
             status = proc.wait()
         else:
-            print("Skipping unverified %s" % fullpath)
+            print("Skipping unverified %s" % package.path)
 
 
 #---------------   main   ---------------
