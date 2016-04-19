@@ -670,6 +670,74 @@ COMMANDS
 Github page: http://github.com/t-wissmann/plaur
 """)
 
+def cmd_status(args):
+    class Cell:
+        def __init__(self,text,color=None):
+            self.text = text
+            self.color = color
+        def width(self):
+            # TODO: return utf8 string length
+            return 2+len(self.text)
+        def render(self,width):
+            string = (" %-"+str(width-2)+"s ") % self.text
+            if self.color:
+                string = "\033[%sm%s\033[0m" % (self.color,string)
+            return string
+    class Table:
+        def __init__(self):
+            self.rows = [ ]
+        def add_row(self,r):
+            self.rows.append(r);
+        def __str__(self):
+            # firstly, construct the width of the columns
+            colwidths = [ ]
+            for r in self.rows:
+                for i,c in enumerate(r):
+                    if len(colwidths) <= i:
+                        colwidths.append(c.width())
+                    else:
+                        colwidths[i] = max(colwidths[i], c.width())
+            # secondly, print the table
+            buf = ""
+            for r in self.rows:
+                for i,c in enumerate(r):
+                    buf += c.render(colwidths[i])
+                buf += "\n"
+            return buf
+
+    git = assert_plaur_git()
+    packs = PackageConfig(git)
+    packs.read()
+    paths = args
+    if paths:
+        # prepend a prefix to paths, depending on the cwd
+        paths = [ prefix + p for p in paths ]
+    else:
+        # if no path is given, implicitly use all paths saved
+        paths = packs.paths()
+    table = Table()
+    hashlength = 10 # tells how short the git commit hashes are cropped
+    for fullpath in paths:
+        package = packs[fullpath]
+        last_verified = package.last_verified()
+        lvcolor = '42;30'
+        headcolor = None
+        if package.git.exists():
+            head = package.git.HEAD()
+            if head == last_verified:
+                headcolor = lvcolor
+            else:
+                headcolor = '41;1;37'
+        else:
+            head = ''
+        r = [
+            Cell(fullpath),
+            Cell(last_verified[0:hashlength],color=lvcolor),
+            Cell(head[0:hashlength],color=headcolor),
+        ]
+        table.add_row(r)
+    print(table,end="")
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help", is_alias=True)],
@@ -683,6 +751,8 @@ commands = [
     [ "build",   Command(cmd_build, "Build the specified packages")],
     [ "git",     Command(cmd_git, "Run a git command on the packages repository")],
     [ "asciidoc",Command(cmd_asciidoc, "Generate documentation in asciidoc format")],
+    [ "status",  Command(cmd_status, "Show package version and build status")],
+    [ "st",      Command(cmd_status, "Show package version and build status", is_alias=True)],
 ]
 commands_dict = { }
 for k,v in commands:
