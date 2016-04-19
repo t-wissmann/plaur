@@ -409,7 +409,9 @@ def cmd_usage(args):
         print(c.callback.__doc__)
 
 def cmd_init(args):
-    """Initialize an empty plaur repository in the current working directory"""
+    """Usage: init
+
+    Initialize an empty plaur repository in the current working directory"""
     git_path = detect_git();
     if git_path != None:
         raise UserErrorMessage("Already a git repository in »%s«" % git_path)
@@ -606,6 +608,37 @@ def cmd_git(args):
     git = assert_plaur_git()
     sys.exit(git.plain_call(*args))
 
+def cmd_asciidoc(args):
+    """Usage: asciidoc
+
+    Generate the documentation in the asciidoc format.
+    """
+    global commands_dict
+    flag = re.compile('(?P<flag>--[\w-]+)')
+    argname = re.compile('(?P<argname>[A-Z][A-Z0-9…]+)')
+    print("""%s(1)
+=====
+:doctype: manpage
+:man version: git
+
+NAME
+----
+%s - a pleasant AUR helper using the power of git
+        """ % (program_name, program_name) )
+    for name,c in commands_dict.items():
+        # extract the usage line:
+        (usage,longdesc) = c.callback.__doc__.split('\n', 1)
+        if usage.startswith("Usage: "):
+            usage = usage[len("Usage: "):]
+        usage = flag.sub(r'*\1*', usage)
+        usage = argname.sub(r"'\1'", usage)
+        print ('\n' + usage + '::')
+        print ('    __' + c.description + '__')
+        print (longdesc)
+        #c.description
+        #print()
+        #print(c.callback.__doc__)
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help")],
@@ -618,6 +651,7 @@ commands = [
     [ "verify",  Command(cmd_verify, "Verify a pkgbuild")],
     [ "build",   Command(cmd_build, "Build the specified packages")],
     [ "git",     Command(cmd_git, "Run a git command on the packages repository")],
+    [ "asciidoc",Command(cmd_asciidoc, "Generate documentation in asciidoc format")],
 ]
 commands_dict = { }
 for k,v in commands:
