@@ -186,6 +186,17 @@ class Git:
         self.git_dir = path + "/.git"
         self.git_work_tree = path
 
+    # call a git command without redirecting stderr or stdout
+    def plain_call(self, *args):
+        git_prefix = [ 'git',
+                       '--work-tree=' + self.git_work_tree,
+                       '--git-dir=' + self.git_dir,
+        ]
+        command = git_prefix + list(args)
+        debug("Calling »%s«" % ' '.join(command))
+        proc = subprocess.Popen(command)
+        return proc.wait()
+
     # call a git subcommand, returning a tuple:
     # stdout,stderr,status
     def call(self, *args):
@@ -583,6 +594,17 @@ def cmd_build(args):
         else:
             print("Skipping unverified %s" % package.path)
 
+def cmd_git(args):
+    """Usage: git [ARGS…]
+
+    Execute some git command in the main plaur repository.
+
+    This allows performing git commands on the plaur repo without leaving the
+    current working directory. This is convenient, because often one is in a
+    subdirectory which is a git repository of a PKGBUILD.
+    """
+    git = assert_plaur_git()
+    sys.exit(git.plain_call(*args))
 
 #---------------   main   ---------------
 commands = [
@@ -595,6 +617,7 @@ commands = [
     [ "diff",    Command(cmd_diff, "Show differences since last verification")],
     [ "verify",  Command(cmd_verify, "Verify a pkgbuild")],
     [ "build",   Command(cmd_build, "Build the specified packages")],
+    [ "git",     Command(cmd_git, "Run a git command on the packages repository")],
 ]
 commands_dict = { }
 for k,v in commands:
