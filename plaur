@@ -323,6 +323,7 @@ class PackageConfig:
         return names
 
     def get_package(self,path):
+        path = os.path.normpath(path)
         if not path in self.config:
             raise UserErrorMessage("Invalid package path »%s«" % path)
         elif path in self.package_objects:
