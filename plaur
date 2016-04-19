@@ -405,8 +405,9 @@ def cmd_usage(args):
     else:
         c = find_command(args[0])
         print(program_name + " " + args[0] + ": " + c.description)
-        print()
-        print(c.callback.__doc__)
+        if c.callback.__doc__ != None:
+            print()
+            print(c.callback.__doc__)
 
 def cmd_init(args):
     """Usage: init
