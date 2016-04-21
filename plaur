@@ -34,9 +34,8 @@ class SRCINFO:
 
     def reload(self):
         self.sections = { }
-        f = open(self.filepath, 'r')
-        lines = f.readlines()
-        f.close()
+        with open(self.filepath, 'r') as f:
+            lines = f.readlines()
         is_emptyline = re.compile('^[ \\t]*(#.*)?$')
         is_header = re.compile('^(?P<name>[^= \\t]+) = (?P<value>.*)$')
         is_option = re.compile('^\t(?P<name>[^= \\t]+) = (?P<value>.*)$')
