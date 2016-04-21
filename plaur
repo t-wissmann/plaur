@@ -99,7 +99,8 @@ class SRCINFO:
             if sectype == "pkgname":
                 yield secname
 
-    def query_option(self,pkgname,key):
+    def query_pkgname(self,pkgname,key):
+        # TODO: look up the precise semantics of .SRCINFO
         value = []
         fallback_value = []
         for (sectype,secname),options in self.sections.items():
@@ -111,6 +112,13 @@ class SRCINFO:
                     fallback_value += [ options[key] ]
         if value == []:
             value = fallback_value
+        return value
+
+    def query_any(self,key):
+        value = []
+        for (sectype,secname),options in self.sections.items():
+            if key in options:
+                value += options[key]
         return value
 
 # from http://stackoverflow.com/questions/566746/how-to-get-console-window-width-in-python
@@ -406,6 +414,12 @@ class Package:
         if last_verified == '':
             last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
         return last_verified
+
+    def dependencies(self):
+        self.srcinfo.load()
+        deps = self.srcinfo.query_any('makedepends')
+        deps += self.srcinfo.query_any('depends')
+        return deps
 
 #--------------- commands ---------------
 def find_command(name):
@@ -762,6 +776,26 @@ def cmd_status(args):
         table.add_row(r)
     print(table,end="")
 
+def cmd_depadd(args):
+    """Usage: depadd [PATHs…]
+
+    This command is still under development. Right now, it just prints all the
+    dependencies for the given PATHs.
+    """
+    git = assert_plaur_git()
+    prefix = git.prefix_of_cwd()
+    packs = PackageConfig(git)
+    packs.read()
+    paths = args
+    if paths:
+        # prepend a prefix to paths, depending on the cwd
+        paths = [ prefix + p for p in paths ]
+    else:
+        # if no path is given, implicitly use all paths saved
+        paths = packs.paths()
+    for fullpath in paths:
+        package = packs[fullpath]
+        print(fullpath + ": " + str(package.dependencies()))
 
 def cmd_cat_srcinfo(args):
     """
@@ -793,6 +827,7 @@ commands = [
     [ "asciidoc",Command(cmd_asciidoc, "Generate documentation in asciidoc format")],
     [ "status",  Command(cmd_status, "Show package version and build status")],
     [ "st",      Command(cmd_status, "Show package version and build status", is_alias=True)],
+    [ "depadd",  Command(cmd_depadd, "Add dependencies for the given packages")],
     [ "cat_srcinfo",  Command(cmd_cat_srcinfo, "Read and print the given .SRCINFO files")],
 ]
 commands_dict = { }
