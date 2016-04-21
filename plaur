@@ -30,7 +30,18 @@ class SRCINFO:
     def __init__(self, filepath):
         self.filepath = filepath
         self.reload
+        # sections is a dictionary that maps pairs (e.g. ("pkgname","plaur")) to
+        # section dictionaries. Each section dictionary maps keys to a list of
+        # values
+        # TODO: keep the order of sections fix if their order matters in the
+        #       .SRCINFO specification
         self.sections = { }
+        self.loaded_once = False
+
+    def load(self):
+        if not self.loaded_once:
+            self.reload()
+            self.loaded_once = True
 
     def reload(self):
         self.sections = { }
@@ -60,7 +71,10 @@ class SRCINFO:
                 current_header = (h.get().group('name'),h.get().group('value'))
                 current_section = { }
             elif h.set(is_option.match(line)):
-                current_section[h.get().group('name')] = h.get().group('value')
+                name = h.get().group('name')
+                if not name in current_section:
+                    current_section[name] = [ ]
+                current_section[name].append(h.get().group('value'))
             else:
                 raise UserErrorMessage("Line %d: unrecognized syntax: \"%s\"" % (i+1, line))
         # save the last section
@@ -69,6 +83,16 @@ class SRCINFO:
         #print(self.sections)
     # example usage:
     # SRCINFO('.SRCINFO').reload()
+
+    def __str__(self):
+        buf = ""
+        for (sectype,secname),section in self.sections.items():
+            buf += "%s = %s\n" % (sectype,secname)
+            for key,values in section.items():
+                for v in values:
+                    buf += "\t%s = %s\n" % (key,v)
+            buf += "\n"
+        return buf
 
     def packages(self):
         for sectype,secname in self.sections:
@@ -81,7 +105,7 @@ class SRCINFO:
         for (sectype,secname),options in self.sections.items():
             if sectype == "pkgname" and secname == pkgname:
                 if key in options:
-                    value += [ options[key] ]
+                    value += options[key]
             if sectype == "pkgbase":
                 if key in options:
                     fallback_value += [ options[key] ]
@@ -366,6 +390,7 @@ class Package:
         self.settings = self.pacconf.config[self.path]
         self.fullpath = self.pacconf.git.work_tree() + "/" + self.path # absolute filepath
         self.git = Git(self.fullpath)
+        self.srcinfo = SRCINFO(self.fullpath + '/.SRCINFO')
 
     def fetch(self):
         if not os.path.isdir(self.fullpath):
@@ -737,6 +762,22 @@ def cmd_status(args):
         table.add_row(r)
     print(table,end="")
 
+
+def cmd_cat_srcinfo(args):
+    """
+    Usage: cat_srcinfo [FILES…]
+
+    This command exists solely for debugging purposes:
+
+    Read the supplied FILES of the .SRCINFO format and print them again.
+    The order of options may change, however the order of different options
+    with the same key stays unchanged.
+    """
+    for f in args:
+        srcinfo = SRCINFO(f)
+        srcinfo.load()
+        print(srcinfo, end="")
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help", is_alias=True)],
@@ -752,6 +793,7 @@ commands = [
     [ "asciidoc",Command(cmd_asciidoc, "Generate documentation in asciidoc format")],
     [ "status",  Command(cmd_status, "Show package version and build status")],
     [ "st",      Command(cmd_status, "Show package version and build status", is_alias=True)],
+    [ "cat_srcinfo",  Command(cmd_cat_srcinfo, "Read and print the given .SRCINFO files")],
 ]
 commands_dict = { }
 for k,v in commands:
