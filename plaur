@@ -121,6 +121,16 @@ class SRCINFO:
                 value += options[key]
         return value
 
+    @staticmethod
+    def drop_version_constraints(deplist):
+        """From a list of dependencies, drop all the versioning constraints,
+        resulting in a traversable object of package names
+        """
+        only_name = re.compile('^[^<>=]*')
+        for i in deplist:
+            yield only_name.search(i).group(0)
+
+
 # from http://stackoverflow.com/questions/566746/how-to-get-console-window-width-in-python
 def getTerminalSize():
     import os
@@ -387,6 +397,27 @@ class PackageConfig:
         self.git.call_success("add", self.git.work_tree() + "/" + packages_file)
         self.git.call_success('commit', '-m', message);
 
+    def compute_depgraph(self,paths):
+        # for the following computation, only paths specified in the paths
+        # parameter are considered.
+        # this method returns a pair of dictionaries:
+        # a dictionary that maps dependencies to the list of paths
+        # which require that dependency
+        dependencies = { }
+        # similarly, a dictionary that maps package name to the list of
+        # paths which provide that package name
+        provides = { }
+        for fullpath in paths:
+            package = self[fullpath]
+            try:
+                for i in package.dependencies():
+                    dependencies.setdefault(i,[]).append(package.path)
+                for i in package.provides():
+                    provides.setdefault(i,[]).append(package.path)
+            except FileNotFoundError as e:
+                print("Can not open .SRCINFO of %s: %s" % (package.path, str(e)))
+        return (dependencies,provides)
+
 class Package:
     # Package represents a concrete section of a PackageConfig
     def __init__(self, pacconf, path):
@@ -416,10 +447,18 @@ class Package:
         return last_verified
 
     def dependencies(self):
+        """Return a traversable of package names this package depends on"""
         self.srcinfo.load()
         deps = self.srcinfo.query_any('makedepends')
         deps += self.srcinfo.query_any('depends')
-        return deps
+        return SRCINFO.drop_version_constraints(deps)
+
+    def provides(self):
+        """Return a traversable of package names this package provides on"""
+        self.srcinfo.load()
+        provs = list(self.srcinfo.packages())
+        provs += self.srcinfo.query_any('provides')
+        return SRCINFO.drop_version_constraints(provs)
 
 #--------------- commands ---------------
 def find_command(name):
@@ -793,9 +832,12 @@ def cmd_depadd(args):
     else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
-    for fullpath in paths:
-        package = packs[fullpath]
-        print(fullpath + ": " + str(package.dependencies()))
+    (dependencies,provides) = packs.compute_depgraph(paths)
+    unresolved_deps = [ ]
+    for needed,by in dependencies.items():
+        if not needed in provides:
+            unresolved_deps.append(needed)
+    print("unresolved: %s" % unresolved_deps)
 
 def cmd_cat_srcinfo(args):
     """
