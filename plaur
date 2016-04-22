@@ -446,7 +446,7 @@ def cmd_usage(args):
         print(program_name + " " + args[0] + ": " + c.description)
         if c.callback.__doc__ != None:
             print()
-            print(c.callback.__doc__)
+            print(c.callback.__doc__.lstrip("\n "))
 
 def cmd_init(args):
     """Usage: init
@@ -685,7 +685,7 @@ COMMANDS
         if c.callback.__doc__ == None:
             description = ""
         else:
-            description = c.callback.__doc__.rstrip('\n ')
+            description = c.callback.__doc__.strip('\n ')
         description = flag.sub(r'*\1*', description)
         description = argname.sub(r"'\1'", description)
         usage_rest = description.split('\n', 1)
