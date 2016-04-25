@@ -826,6 +826,46 @@ def cmd_status(args):
         table.add_row(r)
     print(table,end="")
 
+def alpm_depcheck(packages):
+    # check the availability of the package names 'packages'
+    # in the packman repository and return three (not necessarily disjoint!)
+    # lists of package names of the following form:
+    class DepCheckResult:
+        def __init__(self):
+            # Each of them is a list of required packages ...
+            # ... that are installable via a (non-ignored) repository:
+            self.repoinstall = [ ]
+            # ... that are present in an ignored repository:
+            self.repoignore = [ ]
+            # ... that are not found in any pacman/alpm repository
+            self.missing = [ ]
+    res = DepCheckResult()
+    pc = pycman.config.PacmanConfig(conf = '/etc/pacman.conf')
+    alpm = pc.initialize_alpm()
+    local_db = alpm.get_localdb()
+    dbs = alpm.get_syncdbs()
+    repo_ignore_re = re.compile("thorsten")
+    for dep in packages:
+        if pyalpm.find_satisfier(local_db.pkgcache, dep):
+            #print("%s installed" % dep)
+            continue
+        else:
+            repo_found = False
+            for db in dbs:
+                match = repo_ignore_re.match(db.name)
+                if match and match.end() == len(db.name):
+                    res.repoignore.append(dep)
+                    continue
+                pkg = db.get_pkg(dep)
+                if pkg is not None:
+                    #print("%s is in repo %s" % (dep,db.name))
+                    repo_found = True
+                    res.repoinstall.append(dep)
+            if not repo_found:
+                #print("%s missing" % dep)
+                res.missing.append(dep)
+    return res
+
 def cmd_depadd(args):
     """Usage: depadd [PATHs…]
 
@@ -843,50 +883,23 @@ def cmd_depadd(args):
     else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
-    (dependencies,provides) = packs.compute_depgraph(paths,provide_guessing=True)
+    (dependencies,provides) = packs.compute_depgraph(paths,provide_guessing=False)
     unresolved_deps = [ ]
     for needed,by in dependencies.items():
         if not needed in provides:
             unresolved_deps.append(needed)
     #print("unresolved: %s" % unresolved_deps)
-    pc = pycman.config.PacmanConfig(conf = '/etc/pacman.conf')
-    alpm = pc.initialize_alpm()
-    #pycman.action_deptest.handle = pc.initialize_alpm()
-    local_db = alpm.get_localdb()
-    dbs = alpm.get_syncdbs()
-    repoinstall = [ ]
-    repoignore = [ ]
-    missing = [ ]
-    repo_ignore_re = re.compile("thorsten")
-    for dep in unresolved_deps:
-        if pyalpm.find_satisfier(local_db.pkgcache, dep):
-            #print("%s installed" % dep)
-            continue
-        else:
-            repo_found = False
-            for db in dbs:
-                match = repo_ignore_re.match(db.name)
-                if match and match.end() == len(db.name):
-                    repoignore.append(dep)
-                    continue
-                pkg = db.get_pkg(dep)
-                if pkg is not None:
-                    #print("%s is in repo %s" % (dep,db.name))
-                    repo_found = True
-                    repoinstall.append(dep)
-            if not repo_found:
-                #print("%s missing" % dep)
-                missing.append(dep)
+    res = alpm_depcheck(unresolved_deps)
     pacman_command = 'sudo pacman -S --asdeps'.split(' ')
-    print("Packages in ignored repositories: " + ' '.join(repoignore))
-    print("Packages installable: " + ' '.join(repoinstall))
-    if repoinstall and ask ("Install above packages via '%s'?" % ' '.join(pacman_command)):
-        proc = subprocess.Popen(pacman_command + repoinstall)
+    print("Packages in ignored repositories: " + ' '.join(res.repoignore))
+    print("Packages installable: " + ' '.join(res.repoinstall))
+    if res.repoinstall and ask ("Install above packages via '%s'?" % ' '.join(pacman_command)):
+        proc = subprocess.Popen(pacman_command + res.repoinstall)
         proc.wait()
-    print("Unresolved: %s" % ' '.join(missing))
-    if missing and ask ("Add unresolved packages?"):
+    print("Unresolved: %s" % ' '.join(res.missing))
+    if res.missing and ask ("Add unresolved packages?"):
         packs.read()
-        for p in missing:
+        for p in res.missing:
             path = os.path.join(prefix, p)
             url = "https://aur.archlinux.org/%s.git" % p
             packs.add(path, url, asdeps = True)
