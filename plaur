@@ -402,7 +402,9 @@ class PackageConfig:
         self.git.call_success("add", self.git.work_tree() + "/" + packages_file)
         self.git.call_success('commit', '-m', message);
 
-    def compute_depgraph(self,paths):
+    def compute_depgraph(self,paths,provide_guessing = False):
+        # provide-guessing: assume that each directory provides a package with
+        # the same name. (This only applies if the .SRCINFO does not exist)
         # for the following computation, only paths specified in the paths
         # parameter are considered.
         # this method returns a pair of dictionaries:
@@ -420,7 +422,11 @@ class PackageConfig:
                 for i in package.provides():
                     provides.setdefault(i,[]).append(package.path)
             except FileNotFoundError as e:
-                print("Can not open .SRCINFO of %s: %s" % (package.path, str(e)))
+                debug("Can not open .SRCINFO of %s: %s" % (package.path, str(e)))
+                if provide_guessing:
+                    i = os.path.basename(package.path)
+                    print("Guessing that %s provides %s" % (package.path, i))
+                    provides.setdefault(i,[]).append(package.path)
         return (dependencies,provides)
 
 class Package:
@@ -837,7 +843,7 @@ def cmd_depadd(args):
     else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
-    (dependencies,provides) = packs.compute_depgraph(paths)
+    (dependencies,provides) = packs.compute_depgraph(paths,provide_guessing=True)
     unresolved_deps = [ ]
     for needed,by in dependencies.items():
         if not needed in provides:
