@@ -14,9 +14,7 @@ import pycman
 #from pycman import config
 #from pycman import action_deptest
 
-#--------------- config ---------------
-# some file paths, all relative to the git root directory:
-packages_file = "packages.ini" # file path to packages config
+plaur_ini = "plaur.ini" # filename of the central plaur configuration file
 
 class UserErrorMessage(Exception):
     def __init__(self, message):
@@ -286,7 +284,8 @@ class Git:
 
     # tells whether the git is a plaur repository
     def is_plaur_repo(self):
-        return self.is_tracked(self.git_work_tree + "/" + packages_file);
+        pf = os.path.join(self.git_work_tree, plaur_ini)
+        return self.is_tracked(pf);
 
     # returns the CWD relative to the root of the working tree
     def prefix_of_cwd(self):
@@ -344,6 +343,8 @@ def assert_plaur_git():
         if not git.is_plaur_repo():
             raise UserErrorMessage("Present directory is not in a plaur repository")
     #print(gitpath)
+    global config
+    config.set_filename_from_git(git)
     return git
 
 #--------------- classes  ---------------
@@ -352,6 +353,51 @@ class Command:
         self.callback = callback
         self.description = description
         self.is_alias = is_alias
+
+class PlaurConfig:
+    def __init__(self,filename = None):
+        self.file = configparser.ConfigParser()
+        self.file.add_section('options')
+        self.filename = filename
+        self.defaults = {
+            # the defaults dictionary maps keys to pairs of default values and
+            # some description
+            'packages_file': ("packages.ini",
+                  "file path to packages config, relative to the plaur git root"),
+        }
+    def set_filename_from_git(self, git):
+        global plaur_ini
+        self.filename = os.path.join(git.git_work_tree, plaur_ini)
+        self.read()
+
+    # this function should return a read-only reference...
+    def __getitem__(self,key):
+        if key in self.file['options']:
+            return self.file['options']['key']
+        elif key in self.defaults:
+            (v,_) = self.defaults[key]
+            return v
+        else:
+            return None
+
+    def read(self):
+        self.file.read(self.filename)
+    def write(self):
+        with open(self.filename, 'w') as configfile:
+            self.file.write(configfile)
+            configfile.close()
+    def print_contents(self):
+        print("Available options:")
+        for (k,(_,d)) in self.defaults.items():
+            print("%s: %s" % (k,d))
+        print("\nDefault values:")
+        for (k,(v,_)) in self.defaults.items():
+            print("%s = %s" % (k,v))
+        print("\nContents of " + str(self.filename) + ":")
+        for s in self.file.sections():
+            print("[%s]" % s)
+            for k,v in self.file.items(s):
+                print("%s = %s" % (k,v))
 
 class PackageConfig:
     # git is a Git object representing the main plaur repository
@@ -367,10 +413,12 @@ class PackageConfig:
             'verified' : "",
             'asdeps' : asdeps,
         }
+    def absolute_filepath(self):
+        return os.path.join(self.git.work_tree(), config['packages_file'])
     def read(self):
-        self.config.read(self.git.work_tree() + "/" + packages_file)
+        self.config.read(self.absolute_filepath())
     def write(self):
-        with open(self.git.work_tree() + "/" + packages_file, 'w') as configfile:
+        with open(self.absolute_filepath(), 'w') as configfile:
             self.config.write(configfile)
             configfile.close()
     def query(self, path):
@@ -399,7 +447,7 @@ class PackageConfig:
 
     # commit the packages file (and all other staged changes) to the git
     def commit(self, message):
-        self.git.call_success("add", self.git.work_tree() + "/" + packages_file)
+        self.git.call_success("add", self.absolute_filepath())
         self.git.call_success('commit', '-m', message);
 
     def compute_depgraph(self,paths,provide_guessing = False):
@@ -507,13 +555,17 @@ def cmd_init(args):
         raise UserErrorMessage("Already a git repository in »%s«" % git_path)
     git = Git(os.getcwd())
     out = git.call_success('init');
+    global config
+    config.set_filename_from_git(git)
+    config.read()
+    config.write()
+    git.call_success("add", config.filename)
     # create empty packages file
     p = PackageConfig(git)
     p.read()
     p.write()
-    global packages_file
-    git.call_success("add", git.work_tree() + "/" + packages_file)
-    git.call_success("commit", "-m", "Initialize empty %s" % packages_file);
+    git.call_success("add", p.absolute_filepath())
+    git.call_success("commit", "-m", "Initial commit");
 
 def cmd_fetch(args):
     """Usage: fetch [PATH…]
@@ -937,6 +989,17 @@ def cmd_cat_srcinfo(args):
         srcinfo.load()
         print(srcinfo, end="")
 
+def cmd_cat_config(args):
+    """
+    Usage: cat_config
+
+    This command exists solely for debugging purposes:
+
+    Show the contents of the plaur.ini of the present plaur repository.
+    """
+    assert_plaur_git()
+    config.print_contents()
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help", is_alias=True)],
@@ -954,11 +1017,13 @@ commands = [
     [ "st",      Command(cmd_status, "Show package version and build status", is_alias=True)],
     [ "depadd",  Command(cmd_depadd, "Add dependencies for the given packages")],
     [ "cat_srcinfo",  Command(cmd_cat_srcinfo, "Read and print the given .SRCINFO files")],
+    [ "cat_config",  Command(cmd_cat_config, "Read and print the plaur.ini")],
 ]
 commands_dict = { }
 for k,v in commands:
     commands_dict[k] = v
 program_name = re.sub('^.*/', '', sys.argv[0])
+config = PlaurConfig()
 
 if len(sys.argv) <= 1:
     cmd_usage([])
