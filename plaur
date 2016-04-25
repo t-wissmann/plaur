@@ -839,6 +839,14 @@ def alpm_depcheck(packages):
             self.repoignore = [ ]
             # ... that are not found in any pacman/alpm repository
             self.missing = [ ]
+            # ... that are already installed
+            self.installed = [ ]
+        def __str__(self):
+            sep = ', '
+            return """repoinstall = %s
+repoignore  = %s
+missing     = %s
+installed   = %s""" % (sep.join(self.repoinstall), sep.join(self.repoignore), sep.join(self.missing), sep.join(self.installed))
     res = DepCheckResult()
     pc = pycman.config.PacmanConfig(conf = '/etc/pacman.conf')
     alpm = pc.initialize_alpm()
@@ -846,24 +854,26 @@ def alpm_depcheck(packages):
     dbs = alpm.get_syncdbs()
     repo_ignore_re = re.compile("thorsten")
     for dep in packages:
+        is_installed = False
         if pyalpm.find_satisfier(local_db.pkgcache, dep):
-            #print("%s installed" % dep)
-            continue
-        else:
-            repo_found = False
-            for db in dbs:
-                match = repo_ignore_re.match(db.name)
-                if match and match.end() == len(db.name):
-                    res.repoignore.append(dep)
-                    continue
-                pkg = db.get_pkg(dep)
-                if pkg is not None:
-                    #print("%s is in repo %s" % (dep,db.name))
-                    repo_found = True
-                    res.repoinstall.append(dep)
-            if not repo_found:
-                #print("%s missing" % dep)
-                res.missing.append(dep)
+            res.installed.append(dep)
+            is_installed = True
+        repo_found = False
+        for db in dbs:
+            match = repo_ignore_re.match(db.name)
+            if match and match.end() == len(db.name) and db.get_pkg(dep):
+                res.repoignore.append(dep)
+                continue
+            pkg = db.get_pkg(dep)
+            if pkg is not None:
+                #print("%s is in repo %s" % (dep,db.name))
+                repo_found = True
+            if pkg is not None and not is_installed:
+                # mark that it still needs to be installed
+                res.repoinstall.append(dep)
+        if not repo_found:
+            #print("%s missing" % dep)
+            res.missing.append(dep)
     return res
 
 def cmd_depadd(args):
@@ -888,8 +898,9 @@ def cmd_depadd(args):
     for needed,by in dependencies.items():
         if not needed in provides:
             unresolved_deps.append(needed)
-    #print("unresolved: %s" % unresolved_deps)
+    print("unresolved: %s" % unresolved_deps)
     res = alpm_depcheck(unresolved_deps)
+    print(res)
     pacman_command = 'sudo pacman -S --asdeps'.split(' ')
     print("Packages in ignored repositories: " + ' '.join(res.repoignore))
     print("Packages installable: " + ' '.join(res.repoinstall))
