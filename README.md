@@ -19,7 +19,7 @@ Additional requirements for the documentation:
   - Makefile
   - sed
 
-The man page +plaur.1+ and HTML documentation +plaur.html+ are created by:
+The man page `plaur.1` and HTML documentation `plaur.html` are created by:
 ```
 $ make
 ```
