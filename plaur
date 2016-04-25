@@ -806,7 +806,47 @@ COMMANDS
         print ('    __' + c.description + '__')
         print (re.compile('^$', re.MULTILINE).sub(r'    +', longdesc))
     print("""
-== RESOURCES
+[[FILES]]
+FILES
+-----
+Beside the actual packages *plaur* manages two files, as described in the
+following. Both are using the <<INIFILEFORMAT,*INI FILE FORMAT*>>.
+
+[[MAINCONFIGURATION]]
+MAIN CONFIGURATION: plaur.ini
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The git root of the plaur repository must contain a file named +plaur.ini+
+serving two purposes. Firstly it identifies a git repository as a plaur
+repository. Secondly it contains the user specific configuration. Its content
+is never written by *plaur* and is intended to be edited manually by the user
+if needed. The available options are available in the only file section called
++options+:
+
+""")
+    for (k,(v,d)) in config.defaults.items():
+        print("'%s' (Default value: +%s+)::\n  %s" % (k,v,d))
+
+    print("""
+
+[[PACKAGESCONFIGURATION]]
+PACKAGES CONFIGURATION: packages.ini
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In the git root, a file +packages.ini+ (file name and location are configurable
+in +plaur.ini+) lists the packages and their options, managed by *plaur*. It is
+edited automatically via *plaur* and not intended to be written by the user.
+
+[[INIFILEFORMAT]]
+INI FILE FORMAT
+~~~~~~~~~~~~~~~
+All configuration files are of python's ini format:
+
+    - Lines beginning with +#+ are treated as commetns
+    - The file is divided into sections. Each section starts with a line
+      +[name]+ where +name+ denotes the section name. Then multiple lines
+      of the pattern +key = value+ follow.
+
+RESOURCES
+---------
 Github page: http://github.com/t-wissmann/plaur
 """)
 
