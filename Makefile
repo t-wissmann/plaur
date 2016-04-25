@@ -11,9 +11,18 @@ plaur.1: plaur.txt
 plaur.html: plaur.txt
 	$(ASCIIDOC) $<
 
-plaur.txt: plaur
+plaur.txt: plaur plaur_concept.txt
 	./plaur asciidoc > $@
 
+#sed 's,^[#] ,== ,' $< | sed 's,^[`][`][`]$,----,' > $@
+plaur_concept.txt: plaur_concept.md
+	cat $< \
+		| sed 's,^# ,== ,' \
+		| sed 's,^## ,=== ,' \
+		| sed 's,^```$$,----,' \
+		| sed 's,`,+,g' \
+		| tee $@ > /dev/null
+
 clean:
-	rm -f plaur.1 plaur.html plaur.txt
+	rm -f plaur.1 plaur.html plaur.txt plaur_concept.txt
 

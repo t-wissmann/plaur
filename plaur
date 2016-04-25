@@ -775,6 +775,8 @@ Calls the given *plaur* subcommand. The meanings of the arguments 'ARGS' depend
 on the 'SUBCOMMAND'. The available commands and their meanings are described in
 the <<COMMANDS,*COMMANDS*>> section.
 
+include::plaur_concept.txt[]
+
 [[COMMANDS]]
 COMMANDS
 --------
