@@ -9,6 +9,11 @@ import sys
 import re
 import subprocess
 
+import pyalpm
+import pycman
+#from pycman import config
+#from pycman import action_deptest
+
 #--------------- config ---------------
 # some file paths, all relative to the git root directory:
 packages_file = "packages.ini" # file path to packages config
@@ -202,9 +207,9 @@ class _GetchUnix:
 
 def ask(message,default_yes=True):
     if default_yes:
-        answers = '[Yn]'
+        answers = '[Y/n]'
     else:
-        answers = '[yN]'
+        answers = '[y/N]'
     print("%s %s " % (message,answers),end="",flush=True)
     ch = _GetchUnix()()
     if not ch == '\n':
@@ -554,7 +559,7 @@ def cmd_add(args):
     packs = PackageConfig(git)
     prefix = git.prefix_of_cwd()
     packs.read()
-    packs.add(prefix + path, "https://aur.archlinux.org/%s.git" % name, asdeps)
+    packs.add(prefix+path, "https://aur.archlinux.org/%s.git" % name, asdeps = asdeps)
     packs.write()
     packs.commit("Add " + prefix + path);
 
@@ -837,7 +842,55 @@ def cmd_depadd(args):
     for needed,by in dependencies.items():
         if not needed in provides:
             unresolved_deps.append(needed)
-    print("unresolved: %s" % unresolved_deps)
+    #print("unresolved: %s" % unresolved_deps)
+    pc = pycman.config.PacmanConfig(conf = '/etc/pacman.conf')
+    alpm = pc.initialize_alpm()
+    #pycman.action_deptest.handle = pc.initialize_alpm()
+    local_db = alpm.get_localdb()
+    dbs = alpm.get_syncdbs()
+    repoinstall = [ ]
+    repoignore = [ ]
+    missing = [ ]
+    repo_ignore_re = re.compile("thorsten")
+    for dep in unresolved_deps:
+        if pyalpm.find_satisfier(local_db.pkgcache, dep):
+            #print("%s installed" % dep)
+            continue
+        else:
+            repo_found = False
+            for db in dbs:
+                match = repo_ignore_re.match(db.name)
+                if match and match.end() == len(db.name):
+                    repoignore.append(dep)
+                    continue
+                pkg = db.get_pkg(dep)
+                if pkg is not None:
+                    #print("%s is in repo %s" % (dep,db.name))
+                    repo_found = True
+                    repoinstall.append(dep)
+            if not repo_found:
+                #print("%s missing" % dep)
+                missing.append(dep)
+    pacman_command = 'sudo pacman -S --asdeps'.split(' ')
+    print("Packages in ignored repositories: " + ' '.join(repoignore))
+    print("Packages installable: " + ' '.join(repoinstall))
+    if repoinstall and ask ("Install above packages via '%s'?" % ' '.join(pacman_command)):
+        proc = subprocess.Popen(pacman_command + repoinstall)
+        proc.wait()
+    print("Unresolved: %s" % ' '.join(missing))
+    if missing and ask ("Add unresolved packages?"):
+        packs.read()
+        for p in missing:
+            path = os.path.join(prefix, p)
+            url = "https://aur.archlinux.org/%s.git" % p
+            packs.add(path, url, asdeps = True)
+            packs.write()
+            msg = ("Add dependency %s\n\n"
+                + "It is required by:\n"
+                + "  - %s\n") % (path, '\n  - '.join(dependencies[p]))
+            #print(msg)
+            packs.commit(msg)
+
 
 def cmd_cat_srcinfo(args):
     """
