@@ -9,10 +9,10 @@ plaur.1: plaur.txt
 	$(A2X) -f manpage -a "date=`date +%Y-%m-%d`" $<
 
 plaur.html: plaur.txt
-	$(ASCIIDOC) $<
+	$(ASCIIDOC) -v $<
 
 plaur.txt: plaur plaur_concept.txt
-	./plaur asciidoc > $@
+	./plaur asciidoc > $@ || (rm -f $@ ; false)
 
 #sed 's,^[#] ,== ,' $< | sed 's,^[`][`][`]$,----,' > $@
 plaur_concept.txt: plaur_concept.md
@@ -21,7 +21,7 @@ plaur_concept.txt: plaur_concept.md
 		| sed 's,^## ,=== ,' \
 		| sed 's,^```$$,----,' \
 		| sed 's,`,+,g' \
-		| tee $@ > /dev/null
+		> $@ || (rm -f $@ ; false)
 
 clean:
 	rm -f plaur.1 plaur.html plaur.txt plaur_concept.txt
