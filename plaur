@@ -8,6 +8,7 @@ import os
 import sys
 import re
 import subprocess
+import queue
 
 import pyalpm
 import pycman
@@ -27,6 +28,9 @@ class UserErrorMessage(Exception):
 def debug(*objs):
     #print("Debug: ", *objs, file=sys.stderr)
     return True
+
+def error_msg(*objs):
+    print("Error: ", *objs, file=sys.stderr)
 
 class SRCINFO:
     # parse a .SRCINFO file and provide some wrapper functions
@@ -477,6 +481,73 @@ class PackageConfig:
                     provides.setdefault(i,[]).append(package.path)
         return (dependencies,provides)
 
+    @staticmethod
+    def depsort(dependencies,provides):
+        # map dependencies/provides dicts as given in the compute_depgraph()
+        # function to a concrete order of the involved paths.
+        # for a path, it tells how many other paths need to be built before.
+        in_degree = { }
+        ready_to_build = queue.Queue() # paths that can be built immediately
+        # if a multiple paths P1 and P2 both provide the same package required
+        # by some other path B, then both P1 and P2 are built before B is.
+        path_provides = { } # map paths to packages it provides
+        for package,provided_by in provides.items():
+            for path in provided_by:
+                # path provides package
+                in_degree[path] = 0;
+                path_provides.setdefault(path, []).append(package)
+        for dep,required_by in dependencies.items():
+            for path in required_by:
+                in_degree.setdefault(path, 0)
+                in_degree[path] += len(provides.get(dep, []))
+        for path,degree in in_degree.items():
+            if degree == 0:
+                ready_to_build.put(path)
+        topsorted = [ ]
+        while not ready_to_build.empty():
+            path = ready_to_build.get(block = False)
+            topsorted.append(path)
+            for provs in path_provides[path]:
+                for next_path in dependencies.get(provs, []):
+                    in_degree[next_path] -= 1;
+                    assert(in_degree[next_path] >= 0)
+                    if (in_degree[next_path] <= 0):
+                        ready_to_build.put(next_path)
+        cyclic_deps = []
+        for path,degree in in_degree.items():
+            if degree > 0:
+                cyclic_deps.append(path)
+        if cyclic_deps:
+            msg = "Ignoring packages because of cyclic dependencies: "
+            msg += ' '.join(cyclic_deps)
+            error_msg(msg)
+        return topsorted
+
+    @staticmethod
+    def test_depsort():
+        dependencies = {
+            'libpurple' : [ 'someprotocolpath' ],
+            'pidgin' : [ 'someprotocolpath' ],
+            'glib' : [ 'fullpidgin' ],
+        }
+        provides = {
+            'libpurple' : ['onlylibpurple', 'fullpidgin'],
+            'pidgin' : [ 'fullpidgin'],
+            'someprotocol' : [ 'someprotocolpath' ],
+        }
+        print (' '.join(PackageConfig.depsort(dependencies, provides)))
+        dependencies = {
+            'n1' : [ 'p1' ],
+            'n2' : [ 'p1' ],
+            'n3' : [ ],
+        }
+        provides = {
+            'n1' : ['px', 'p2'],
+            'n2' : [ 'fullpidgin'],
+            'n3' : [ 'someprotocolpath', 'p1' ],
+        }
+        print (' '.join(PackageConfig.depsort(dependencies, provides)))
+
 class Package:
     # Package represents a concrete section of a PackageConfig
     def __init__(self, pacconf, path):
@@ -717,9 +788,21 @@ def cmd_build(args):
     git = assert_plaur_git()
     packs = PackageConfig(git)
     packs.read()
-    prefix = git.prefix_of_cwd()
-    for path in args:
-        fullpath = prefix + path
+    paths = args
+    if paths:
+        # prepend a prefix to paths, depending on the cwd
+        prefix = git.prefix_of_cwd()
+        paths = [ prefix + p for p in paths ]
+    else:
+        paths = packs.paths()
+        install = True
+    # reorder paths according to dependencies
+    print("Building the packages: " + ' '.join(paths))
+    (provides,dependencies) = packs.compute_depgraph(paths, provide_guessing = True)
+    paths = PackageConfig.depsort(provides,dependencies)
+    print("Building the packages: " + ' '.join(paths))
+    return
+    for fullpath in paths:
         package = packs[fullpath]
         package.git.assert_exists()
         package_HEAD = package.git.HEAD()
@@ -727,6 +810,7 @@ def cmd_build(args):
         if package_HEAD == last_verified:
             print("Running makepkg in %s" % package.path)
             makepkg = ['makepkg']
+            makepkg += [ '--noprogressbar', '--log' ]
             if install:
                 makepkg += ['-i']
                 if package.settings.getboolean('asdeps', fallback=False):
