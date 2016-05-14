@@ -1127,6 +1127,38 @@ def cmd_cat_config(args):
     assert_plaur_git()
     config.print_contents()
 
+def cmd_why(args):
+    """
+    Usage: why [PACKAGES…]
+
+    For the given PACKAGES, why they are in the plaur repository. That is, tell
+    whether it was added explicitly or as a dependency, and tell by which other
+    packages it is needed.
+    """
+    git = assert_plaur_git()
+    packs = PackageConfig(git)
+    packs.read()
+    (deps,provs) = packs.compute_depgraph(packs.paths())
+    paths = args
+    if paths:
+        prefix = git.prefix_of_cwd()
+        paths = [ os.path.join(prefix, p) for p in paths ]
+    else:
+        paths = packs.paths()
+    for package in [ packs[p] for p in paths ]:
+        if package.settings.getboolean('asdeps', fallback=False):
+            print("%s was added as a dependency." % package.path)
+        else:
+            print("%s was added explicitly." % package.path)
+        for name,provided_by in provs.items():
+            if package.path in provided_by:
+                msg = "  %s required by: " % name
+                l = deps.get(name, [])
+                msg += ' '.join(l) if l else "nothing else"
+                print(msg)
+
+
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help", is_alias=True)],
@@ -1145,6 +1177,7 @@ commands = [
     [ "depadd",  Command(cmd_depadd, "Add dependencies for the given packages")],
     [ "cat_srcinfo",  Command(cmd_cat_srcinfo, "Read and print the given .SRCINFO files")],
     [ "cat_config",  Command(cmd_cat_config, "Read and print the plaur.ini")],
+    [ "why",  Command(cmd_why, "Tell why a package is in the plaur repository")],
 ]
 commands_dict = { }
 for k,v in commands:
