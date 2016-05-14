@@ -977,6 +977,7 @@ def cmd_status(args):
     paths = args
     if paths:
         # prepend a prefix to paths, depending on the cwd
+        prefix = git.prefix_of_cwd()
         paths = [ prefix + p for p in paths ]
     else:
         # if no path is given, implicitly use all paths saved
@@ -1042,7 +1043,7 @@ installed   = %s""" % (sep.join(self.repoinstall), sep.join(self.repoignore), se
             if match and match.end() == len(db.name) and db.get_pkg(dep):
                 res.repoignore.append(dep)
                 continue
-            pkg = db.get_pkg(dep)
+            pkg = pyalpm.find_satisfier(db.pkgcache, dep)
             if pkg is not None:
                 #print("%s is in repo %s" % (dep,db.name))
                 repo_found = True
