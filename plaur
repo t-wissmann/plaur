@@ -661,8 +661,14 @@ class Package:
         logfile = os.path.join(self.fullpath, logfile)
         with open(logfile, "w") as outfile:
             proc = subprocess.Popen(makepkg, cwd=self.fullpath, stdout=outfile, stderr=outfile)
-        print("For live logging, type: tail -f %s" % logfile)
+        print("  For live logging, type:\n  tail -f %s" % logfile)
         status = proc.wait()
+        if status != 0:
+            print("  makepkg failed with exit status %d:" % status)
+            with open(logfile) as f:
+                lines = f.read().strip('\n').split('\n')
+                for l in lines[-10:]:
+                    print("    " + l)
 
     @staticmethod
     def install(packagelist):
@@ -907,17 +913,18 @@ def cmd_build(args):
     print("Building the packages: " + ' '.join(paths))
     for fullpath in paths:
         package = packs[fullpath]
+        print(":: " + package.path)
         try:
             if not package.is_built():
                 package.build()
             else:
-                print("Not building up to date %s" % package.path)
+                print("  Built packages up to date")
             if package.uninstalled_packages():
                 Package.install([package])
             else:
-                print("Not installing up to date %s" % package.path)
+                print("  Installed packages up to date")
         except PackageUnverified as e:
-            print("Skipping unverified %s" % e.path)
+            print("  Skipping unverified %s" % e.path)
 
 def cmd_git(args):
     """Usage: git [ARGS…]
