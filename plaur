@@ -9,6 +9,7 @@ import sys
 import re
 import subprocess
 import queue
+import time
 
 import pyalpm
 import pycman
@@ -42,7 +43,6 @@ class SRCINFO:
     # parse a .SRCINFO file and provide some wrapper functions
     def __init__(self, filepath):
         self.filepath = filepath
-        self.reload
         # sections is a dictionary that maps pairs (e.g. ("pkgname","plaur")) to
         # section dictionaries. Each section dictionary maps keys to a list of
         # values
@@ -58,8 +58,11 @@ class SRCINFO:
 
     def reload(self):
         self.sections = { }
-        with open(self.filepath, 'r') as f:
-            lines = f.readlines()
+        try:
+            with open(self.filepath, 'r') as f:
+                lines = f.readlines()
+        except FileNotFoundError as e:
+            raise UserErrorMessage(str(e))
         is_emptyline = re.compile('^[ \\t]*(#.*)?$')
         is_header = re.compile('^(?P<name>[^= \\t]+) = (?P<value>.*)$')
         is_option = re.compile('^\t(?P<name>[^= \\t]+) = (?P<value>.*)$')
@@ -651,10 +654,14 @@ class Package:
 
     def build(self):
         self.assert_verified()
-        print("Running makepkg in %s" % self.path)
+        print("  Running makepkg in %s" % self.path)
         makepkg = ['makepkg']
-        makepkg += [ '--noprogressbar', '--log' ]
-        proc = subprocess.Popen(makepkg, cwd=self.fullpath)
+        makepkg += [ ]
+        logfile = 'build-%s.log' % time.strftime('%Y-%m-%d-%H-%M')
+        logfile = os.path.join(self.fullpath, logfile)
+        with open(logfile, "w") as outfile:
+            proc = subprocess.Popen(makepkg, cwd=self.fullpath, stdout=outfile, stderr=outfile)
+        print("For live logging, type: tail -f %s" % logfile)
         status = proc.wait()
 
     @staticmethod
