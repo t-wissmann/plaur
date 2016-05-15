@@ -25,6 +25,12 @@ class UserErrorMessage(Exception):
     def print(self):
         print("%s error: %s" % (program_name, self.message))
 
+class PackageUnverified(Exception):
+    def __init__(self, path):
+        self.path = path
+    def __str(self):
+        return "Package %s not verified" % self.path
+
 def debug(*objs):
     #print("Debug: ", *objs, file=sys.stderr)
     return True
@@ -116,10 +122,31 @@ class SRCINFO:
                     value += options[key]
             if sectype == "pkgbase":
                 if key in options:
-                    fallback_value += [ options[key] ]
+                    fallback_value += options[key]
         if value == []:
             value = fallback_value
         return value
+
+    def package_names(self):
+        class PackageName:
+            def __init__(self,name,ver,rel,arch):
+                self.name = name
+                self.ver = ver
+                self.rel = rel
+                self.arch = arch
+                self.suffix = '.pkg.tar.xz'
+            def __str__(self):
+                pattern = [self.name, self.ver, self.rel, self.arch]
+                return '-'.join(pattern) + self.suffix
+        res = [ ]
+        for name in self.packages():
+            ver = self.query_pkgname(name,'pkgver')[0]
+            rel = self.query_pkgname(name,'pkgrel')[0]
+            arches = self.query_pkgname(name,'arch')
+            default_arch = 'x86_64'
+            arch = 'any' if 'any' in arches else default_arch
+            res.append(PackageName(name,ver,rel,arch))
+        return res
 
     def query_any(self,key):
         value = []
@@ -576,11 +603,18 @@ class Package:
             last_verified = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
         return last_verified
 
+    def assert_verified(self):
+        """If not verified, raise a PackageUnverified exception"""
+        self.git.assert_exists()
+        if self.last_verified() != self.git.HEAD():
+            raise PackageUnverified(self.path)
+
     def dependencies(self):
         """Return a traversable of package names this package depends on"""
         self.srcinfo.load()
         deps = self.srcinfo.query_any('makedepends')
         deps += self.srcinfo.query_any('depends')
+        deps += self.srcinfo.query_any('checkdepends')
         return SRCINFO.drop_version_constraints(deps)
 
     def provides(self):
@@ -589,6 +623,70 @@ class Package:
         provs = list(self.srcinfo.packages())
         provs += self.srcinfo.query_any('provides')
         return SRCINFO.drop_version_constraints(provs)
+    def packagelist(self):
+        """If .SRCINFO exists, return a list of packages"""
+        self.srcinfo.load()
+        return self.srcinfo.package_names()
+
+    def is_built(self):
+        """Tell whether all packages created by that package exist """
+        for f in self.packagelist():
+            f = os.path.join(self.fullpath, str(f))
+            if not os.path.isfile(f):
+                return False
+        return True
+
+    def uninstalled_packages(self):
+        """Tell which packages by this package are not installed"""
+        alpm = ALPM.get()
+        local_db = alpm.get_localdb()
+        uninstalled = [ ]
+        for f in self.packagelist():
+            dep = f.name + '=' + f.ver + '-' + f.rel
+            if pyalpm.find_satisfier(local_db.pkgcache, dep):
+                continue
+            else:
+                uninstalled.append(f)
+        return uninstalled
+
+    def build(self):
+        self.assert_verified()
+        print("Running makepkg in %s" % self.path)
+        makepkg = ['makepkg']
+        makepkg += [ '--noprogressbar', '--log' ]
+        proc = subprocess.Popen(makepkg, cwd=self.fullpath)
+        status = proc.wait()
+
+    @staticmethod
+    def install(packagelist):
+        asexplicit = [ ]
+        asdeps = [ ]
+        for package in packagelist:
+            for f in package.packagelist():
+                f = os.path.join(package.fullpath, str(f))
+                if package.settings.getboolean('asdeps', fallback=False):
+                    asdeps.append(f)
+                else:
+                    asexplicit.append(f)
+        if not asexplicit and not asdeps:
+            # nothing to install
+            return
+        pacman = [ 'sudo', 'pacman', '-U' ]
+        pacman += asexplicit
+        pacman += asdeps
+        proc = subprocess.Popen(pacman)
+        status = proc.wait()
+        if asexplicit:
+            pacman = [ 'sudo', 'pacman', '-D', '--asexplicit' ]
+            pacman += asexplicit
+            proc = subprocess.Popen(pacman)
+            status = proc.wait()
+        if asdeps:
+            pacman = [ 'sudo', 'pacman', '-D', '--asdeps' ]
+            pacman += asdeps
+            proc = subprocess.Popen(pacman)
+            status = proc.wait()
+
 
 #--------------- commands ---------------
 def find_command(name):
@@ -797,30 +895,22 @@ def cmd_build(args):
         paths = packs.paths()
         install = True
     # reorder paths according to dependencies
-    print("Building the packages: " + ' '.join(paths))
     (provides,dependencies) = packs.compute_depgraph(paths, provide_guessing = True)
     paths = PackageConfig.depsort(provides,dependencies)
     print("Building the packages: " + ' '.join(paths))
-    return
     for fullpath in paths:
         package = packs[fullpath]
-        package.git.assert_exists()
-        package_HEAD = package.git.HEAD()
-        last_verified = package.last_verified()
-        if package_HEAD == last_verified:
-            print("Running makepkg in %s" % package.path)
-            makepkg = ['makepkg']
-            makepkg += [ '--noprogressbar', '--log' ]
-            if install:
-                makepkg += ['-i']
-                if package.settings.getboolean('asdeps', fallback=False):
-                    makepkg += ['--asdeps']
-            proc = subprocess.Popen(makepkg,
-                                    cwd=git.work_tree() + "/" + package.path,
-                                    )
-            status = proc.wait()
-        else:
-            print("Skipping unverified %s" % package.path)
+        try:
+            if not package.is_built():
+                package.build()
+            else:
+                print("Not building up to date %s" % package.path)
+            if package.uninstalled_packages():
+                Package.install([package])
+            else:
+                print("Not installing up to date %s" % package.path)
+        except PackageUnverified as e:
+            print("Skipping unverified %s" % e.path)
 
 def cmd_git(args):
     """Usage: git [ARGS…]
@@ -1005,6 +1095,16 @@ def cmd_status(args):
         table.add_row(r)
     print(table,end="")
 
+class ALPM:
+    pacman_config = None
+    alpm_handle = None
+    @staticmethod
+    def get():
+        if ALPM.alpm_handle == None:
+            ALPM.pacman_config = pycman.config.PacmanConfig(conf = '/etc/pacman.conf')
+            ALPM.alpm_handle = ALPM.pacman_config.initialize_alpm()
+        return ALPM.alpm_handle
+
 def alpm_depcheck(packages):
     # check the availability of the package names 'packages'
     # in the packman repository and return three (not necessarily disjoint!)
@@ -1027,8 +1127,7 @@ repoignore  = %s
 missing     = %s
 installed   = %s""" % (sep.join(self.repoinstall), sep.join(self.repoignore), sep.join(self.missing), sep.join(self.installed))
     res = DepCheckResult()
-    pc = pycman.config.PacmanConfig(conf = '/etc/pacman.conf')
-    alpm = pc.initialize_alpm()
+    alpm = ALPM.get()
     local_db = alpm.get_localdb()
     dbs = alpm.get_syncdbs()
     repo_ignore_re = re.compile("thorsten")
@@ -1077,7 +1176,7 @@ def cmd_depadd(args):
     for needed,by in dependencies.items():
         if not needed in provides:
             unresolved_deps.append(needed)
-    print("unresolved: %s" % unresolved_deps)
+    print("unresolved: %s" % ' '.join(unresolved_deps))
     res = alpm_depcheck(unresolved_deps)
     print(res)
     pacman_command = 'sudo pacman -S --asdeps'.split(' ')
