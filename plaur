@@ -58,11 +58,8 @@ class SRCINFO:
 
     def reload(self):
         self.sections = { }
-        try:
-            with open(self.filepath, 'r') as f:
-                lines = f.readlines()
-        except FileNotFoundError as e:
-            raise UserErrorMessage(str(e))
+        with open(self.filepath, 'r') as f:
+            lines = f.readlines()
         is_emptyline = re.compile('^[ \\t]*(#.*)?$')
         is_header = re.compile('^(?P<name>[^= \\t]+) = (?P<value>.*)$')
         is_option = re.compile('^\t(?P<name>[^= \\t]+) = (?P<value>.*)$')
@@ -590,6 +587,7 @@ class Package:
         self.fullpath = self.pacconf.git.work_tree() + "/" + self.path # absolute filepath
         self.git = Git(self.fullpath)
         self.srcinfo = SRCINFO(self.fullpath + '/.SRCINFO')
+        self.vcs_pkgver_cache = None
 
     def fetch(self):
         if not os.path.isdir(self.fullpath):
@@ -599,6 +597,16 @@ class Package:
                 raise UserErrorMessage("git clone failed for %s" % self.path)
         else:
             self.git.call_success("pull", "--ff-only")
+
+    def fetch_sources(self):
+        """Fetch sources needed to build the package"""
+        self.assert_verified()
+        makepkg = ['makepkg', '--nobuild']
+        logfile = 'fetch-sources-%s.log' % time.strftime('%Y-%m-%d-%H-%M')
+        logfile = os.path.join(self.fullpath, logfile)
+        with open(logfile, "w") as outfile:
+            proc = subprocess.Popen(makepkg, cwd=self.fullpath, stdout=outfile, stderr=outfile)
+            proc.wait()
 
     def last_verified(self):
         last_verified = self.settings['verified']
@@ -611,6 +619,9 @@ class Package:
         self.git.assert_exists()
         if self.last_verified() != self.git.HEAD():
             raise PackageUnverified(self.path)
+
+    def is_verified(self):
+        return self.last_verified() == self.git.HEAD()
 
     def dependencies(self):
         """Return a traversable of package names this package depends on"""
@@ -626,10 +637,34 @@ class Package:
         provs = list(self.srcinfo.packages())
         provs += self.srcinfo.query_any('provides')
         return SRCINFO.drop_version_constraints(provs)
+
+    def vcs_pkgver(self):
+        """If verified, return the VCS version using pkgver() in PKGBUILD"""
+        self.assert_verified()
+        if self.vcs_pkgver_cache != None:
+            return self.vcs_pkgver_cache 
+        command = """
+        pkgver() { true; } ;
+        srcdir='src/' ;
+        . PKGBUILD ;
+        pkgver
+        """
+        bash = ["bash", "-c", command]
+        proc = subprocess.Popen(bash, cwd = self.fullpath, stdout=subprocess.PIPE)
+        proc.wait()
+        self.vcs_pkgver_cache = proc.stdout.read().decode("utf-8").strip('\n')
+        return self.vcs_pkgver_cache
+
     def packagelist(self):
         """If .SRCINFO exists, return a list of packages"""
         self.srcinfo.load()
-        return self.srcinfo.package_names()
+        package_names = self.srcinfo.package_names()
+        if self.is_verified():
+            new_version = self.vcs_pkgver()
+            if new_version != "":
+                for p in package_names:
+                    p.ver = new_version
+        return package_names
 
     def is_built(self):
         """Tell whether all packages created by that package exist """
@@ -913,8 +948,10 @@ def cmd_build(args):
     print("Building the packages: " + ' '.join(paths))
     for fullpath in paths:
         package = packs[fullpath]
-        print(":: " + package.path)
         try:
+            print(":: " + package.path)
+            print("  fetching sources...")
+            package.fetch_sources()
             if not package.is_built():
                 package.build()
             else:
@@ -924,7 +961,7 @@ def cmd_build(args):
             else:
                 print("  Installed packages up to date")
         except PackageUnverified as e:
-            print("  Skipping unverified %s" % e.path)
+            print(":: Skipping unverified %s" % e.path)
 
 def cmd_git(args):
     """Usage: git [ARGS…]
@@ -1185,7 +1222,7 @@ def cmd_depadd(args):
     else:
         # if no path is given, implicitly use all paths saved
         paths = packs.paths()
-    (dependencies,provides) = packs.compute_depgraph(paths,provide_guessing=False)
+    (dependencies,provides) = packs.compute_depgraph(paths,provide_guessing=True)
     unresolved_deps = [ ]
     for needed,by in dependencies.items():
         if not needed in provides:
@@ -1251,7 +1288,7 @@ def cmd_why(args):
     git = assert_plaur_git()
     packs = PackageConfig(git)
     packs.read()
-    (deps,provs) = packs.compute_depgraph(packs.paths())
+    (deps,provs) = packs.compute_depgraph(packs.paths(), provide_guessing=True)
     paths = args
     if paths:
         prefix = git.prefix_of_cwd()
