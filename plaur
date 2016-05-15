@@ -709,19 +709,19 @@ class Package:
     def install(packagelist):
         asexplicit = [ ]
         asdeps = [ ]
+        files = [ ]
         for package in packagelist:
             for f in package.packagelist():
-                f = os.path.join(package.fullpath, str(f))
+                files.append(os.path.join(package.fullpath, str(f)))
                 if package.settings.getboolean('asdeps', fallback=False):
-                    asdeps.append(f)
+                    asdeps.append(f.name)
                 else:
-                    asexplicit.append(f)
-        if not asexplicit and not asdeps:
+                    asexplicit.append(f.name)
+        if not files:
             # nothing to install
             return
-        pacman = [ 'sudo', 'pacman', '-U' ]
-        pacman += asexplicit
-        pacman += asdeps
+        pacman = [ 'sudo', 'pacman', '-U', '--noconfirm' ]
+        pacman += files
         proc = subprocess.Popen(pacman)
         status = proc.wait()
         if asexplicit:
