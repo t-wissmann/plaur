@@ -10,3 +10,5 @@
 # generated files
 plaur.txt
 plaur_concept.txt
+
+__pycache__
