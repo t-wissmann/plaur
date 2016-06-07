@@ -11,8 +11,8 @@ plaur.1: plaur.txt
 plaur.html: plaur.txt
 	$(ASCIIDOC) -v $<
 
-plaur.txt: plaur plaur_concept.txt
-	./plaur asciidoc > $@ || (rm -f $@ ; false)
+plaur.txt: plaur.py plaur_concept.txt
+	./plaur.py asciidoc > $@ || (rm -f $@ ; false)
 
 #sed 's,^[#] ,== ,' $< | sed 's,^[`][`][`]$,----,' > $@
 plaur_concept.txt: plaur_concept.md

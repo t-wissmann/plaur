@@ -295,6 +295,7 @@ def cmd_git(args):
 
 def cmd_asciidoc(args):
     global commands_dict
+    program_name = "plaur"
     flag = re.compile('(?P<flag>--[\w-]+)')
     argname = re.compile('(?P<argname>[A-Z][A-Z0-9…]+[a-z]*)')
     print("""%s(1)
