@@ -21,7 +21,7 @@ from plaur.utils import *
 from plaur import gitwrapper
 from plaur import utils
 from plaur import packageconfig
-from plaur import package
+import plaur.package as P
 import plaur.config
 
 
@@ -275,10 +275,10 @@ def cmd_build(args):
             else:
                 print("  Built packages up to date")
             if package.uninstalled_packages():
-                package.Package.install([package])
+                P.Package.install([package])
             else:
                 print("  Installed packages up to date")
-        except package.PackageUnverified as e:
+        except P.PackageUnverified as e:
             print(":: Skipping unverified %s" % e.path)
 
 def cmd_git(args):
@@ -606,6 +606,8 @@ def main(argv):
             c.callback(argv[2:])
         except UserErrorMessage as e:
             e.print()
+            return 1
+        except KeyboardInterrupt as e:
             return 1
     return 0
 
