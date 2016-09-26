@@ -1,3 +1,4 @@
+# vim: et ts=4 sw=4
 
 import configparser
 import os
@@ -21,6 +22,12 @@ class PackageConfig:
             'verified' : "",
             'asdeps' : asdeps,
         }
+
+    def rm(self, path):
+        if not path in self.config:
+            raise UserErrorMessage("Invalid package path »%s«" % path)
+        self.config.remove_section(path)
+
     def absolute_filepath(self):
         return os.path.join(self.git.work_tree(), plaur.main.config['packages_file'])
     def read(self):

@@ -9,6 +9,7 @@ import re
 import subprocess
 import queue
 import time
+import shutil
 
 
 import pyalpm
@@ -567,7 +568,26 @@ def cmd_why(args):
                 msg += ' '.join(l) if l else "nothing else"
                 print(msg)
 
+def cmd_rm(args):
+    """Usage: rm [PACKAGES…]
 
+    Remove the given PACKAGES.
+    """
+    asdeps = False
+    name = args[0]
+    path = args[1] if len(args) > 1 else name
+    git = assert_plaur_git()
+    packs = packageconfig.PackageConfig(git)
+    prefix = git.prefix_of_cwd()
+    packs.read()
+    packs.rm(prefix+path)
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError as e:
+        # don't do anything if the path does not exist anymore
+        pass
+    packs.write()
+    packs.commit("Remove " + prefix + path);
 
 #---------------   main   ---------------
 commands = [
@@ -588,6 +608,7 @@ commands = [
     [ "cat_srcinfo",  Command(cmd_cat_srcinfo, "Read and print the given .SRCINFO files")],
     [ "cat_config",  Command(cmd_cat_config, "Read and print the plaur.ini")],
     [ "why",  Command(cmd_why, "Tell why a package is in the plaur repository")],
+    [ "rm",  Command(cmd_rm, "Remove a package")],
 ]
 
 
