@@ -276,7 +276,7 @@ def cmd_build(args):
                 package.build()
             else:
                 print("  Built packages up to date")
-            if package.uninstalled_packages():
+            if package.is_built() and package.uninstalled_packages():
                 P.Package.install([package])
             else:
                 print("  Installed packages up to date")
