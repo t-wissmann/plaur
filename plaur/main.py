@@ -4,6 +4,7 @@
 import subprocess
 import configparser
 import os
+import stat
 import sys
 import re
 import subprocess
@@ -582,6 +583,10 @@ def cmd_rm(args):
     packs.read()
     packs.rm(prefix+path)
     try:
+        for root, dirs, files in os.walk(path):
+            for d in dirs:
+              os.chmod(os.path.join(root, d),
+                stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         shutil.rmtree(path)
     except FileNotFoundError as e:
         # don't do anything if the path does not exist anymore
