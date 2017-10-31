@@ -11,6 +11,7 @@ import subprocess
 import queue
 import time
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 
 
 import pyalpm
@@ -127,10 +128,14 @@ def cmd_fetch(args):
     draw_progressbar = True
     #pg = ProgressBar()
     #pg.set(0.0)
-    for i,p in enumerate(paths):
-        #pg.set(float(i) / len(paths))
-        print("Fetching %s" % p)
-        packs.fetch(p)
+    def fetch_thing(current_p):
+        packs.fetch(current_p)
+
+    pool = ThreadPoolExecutor(10)
+    futures = [ (p, pool.submit(fetch_thing,(p))) for p in paths ]
+    for p,f in futures:
+        print("Waiting for {} to be fetched".format(p))
+        f.result()
     #pg.set(1.0)
 
 def cmd_add(args):
