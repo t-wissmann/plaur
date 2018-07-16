@@ -599,6 +599,16 @@ def cmd_rm(args):
     packs.write()
     packs.commit("Remove " + prefix + path);
 
+def cmd_mkexclude(args):
+    """Usage: mkexclude
+
+    Update .git/info/exclude such that package repositories are ignored.
+    """
+    git = assert_plaur_git()
+    packs = packageconfig.PackageConfig(git);
+    packs.read();
+    git.set_info_exclude(['/' + p + '/' for p in packs.paths()])
+
 #---------------   main   ---------------
 commands = [
     [ "-h",      Command(cmd_usage, "Print this help", is_alias=True)],
@@ -619,6 +629,7 @@ commands = [
     [ "cat_config",  Command(cmd_cat_config, "Read and print the plaur.ini")],
     [ "why",  Command(cmd_why, "Tell why a package is in the plaur repository")],
     [ "rm",  Command(cmd_rm, "Remove a package")],
+    [ "mkexclude",  Command(cmd_mkexclude, "Update .git/info/exclude")],
 ]
 
 
